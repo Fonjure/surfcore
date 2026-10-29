@@ -163,7 +163,7 @@ assert.ok(source.includes('"platforms", "start", "qq"'), 'QQ 启动开关没有�
 assert.ok(source.includes('"platforms", "start", "bili"'), 'B站 启动开关没有绑定 platforms.start.bili');
 assert.ok(source.includes('h(PlatformStartCard'), 'QQ / B站 页没有渲染启动开关卡片');
 for (const label of ['一键启动', '启动QQ', '启动B站']) {
-  // 「一键启动」按钮文案后面会跟（含 SnowLuma），按前缀认即可。
+  // 「一键启动」按钮文案后面会跟网关名称，按前缀认即可。
   const ok = label === '一键启动'
     ? source.includes('一键启动')
     : (source.includes(`>${label}<`) || source.includes(`"${label}"`));
@@ -178,6 +178,9 @@ assert.ok(!source.includes('一键启动全部（含 SnowLuma）'), '旧的「�
 assert.ok(!source.includes('随 DSH 启动自动拉起 QQ 桥接'), '旧 bridge.autoStart 开关应迁到 QQ 页的「是否启动」');
 assert.ok(source.includes('去 QQ 页改启动开关') && source.includes('去 B站 页改启动开关'), '概览缺少去平台页改开关的入口');
 assert.ok(source.includes('人格卡在「角色」页维护'), '概览移除人格卡后缺少指路文案');
+assert.ok(source.includes('一键启动（含 NapCat）') && source.includes('act("start-napcat")'), '概览缺少 NapCat 启动入口');
+assert.match(source, /act\("start-qq"\), disabled: !!busy \|\| !qqStart \}/, '桥接运行时仍须允许启动 QQ 网关');
+assert.ok(!source.includes('检测已安装的 SnowLuma'), '设置页不能保留 SnowLuma 安装入口');
 
 // 设置页 IA（2026-10-24 大清理）：人设/角色合并，关键设置常驻，其余进「高级设置」。
 assert.ok(source.includes('function AdvancedSettings'), '缺少统一的「高级设置」折叠组件');

@@ -28,7 +28,7 @@ import {
   QQ_CONFIG, QQBOT_ROOT, STATE_DIR, UNIFIED_FILE, ensureDirs, findNodeExe, maskPath,
 } from './paths.js';
 import { resolvePersonaFile } from './persona.js';
-import { discoverSnowLumaConnection } from '../../../src/snowluma-conn.js';
+import { diagnoseNapCat, findNapCatLauncher, launchNapCat, napcatGroups } from './napcat.js?rev=20261029b';
 import { buildInstallChecks, installOk, planDoctorFix } from './doctor.js';
 import { VOICE_PORTS, readPackCharacters, validateCharacter } from './voice-health.js';
 import {
@@ -65,6 +65,7 @@ import { ExtensionHost } from './extensions.js';
 import { isLoopbackReq, json, readBody, sameOrigin } from './http-guard.js';
 import { startScheduler } from './scheduler.js';
 import { createTokenBudgetService } from './token-budget.js';
+import { ffmpegInfo } from '../tools/lib/ffmpeg.mjs';
 import { createPetService, detectElectronPath, installElectronRuntime, ELECTRON_VERSION, electronDownloadUrl } from './pet.js';
 import { createPetChatService } from './pet-chat.js';
 import { createPetPurposeService } from './pet-purpose.js';
@@ -638,14 +639,13 @@ export function apply(ctx) {
   // ── 概览 ────────────────────────────────────────────────────────────────
   async function overview() {
     const all = readAll();
-    const snow = readQqConfig().config?.snowluma ?? {};
+    const qqConfig = readQqConfig().config ?? {};
     const [bridge, bili, memory] = await Promise.all([
       bridgeStatus().catch((error) => ({ ok: false, error: String(error?.message ?? error) })),
       Promise.resolve(biliToQqStatus()),
       Promise.resolve(memoryStatus()),
     ]);
-    // SnowLuma 只报「未连接」没用：这里给出可执行的诊断（没启动 / 在登录页 / token 不对）。
-    const snowDiag = await diagnoseSnowLuma(bridge?.snowluma ?? {}).catch(() => ({ state: 'unknown', hint: '' }));
+    const gatewayDiag = await diagnoseNapCat({ config: qqConfig.snowluma, bridge }).catch(() => ({ state: 'unknown', hint: '' }));
     const personaText = readTextFile(resolvePersonaFile());
     const mode = parseModeState();
     let dshMode = null;
@@ -674,12 +674,10 @@ export function apply(ctx) {
       // 组件更新：概览「更新」卡与启动弹窗都读它（检查结果是缓存的，不在这里触发网络）。
       updates: updates.status(),
       scheduler: schedulerStatus,
-      snowluma: {
-        launcherPath: String(snow.launcherPath ?? ''),
-        allowLaunch: snow.allowLaunch === true,
-        downloadUrl: String(snow.downloadUrl ?? 'https://github.com/SnowLuma/SnowLuma/releases/latest'),
-        detected: findSnowLumaInstall() !== null,
-        diagnosis: snowDiag,
+      napcat: {
+        launcher: findNapCatLauncher(QQBOT_ROOT, qqConfig.napcat),
+        allowLaunch: qqConfig.napcat?.allowLaunch !== false,
+        diagnosis: gatewayDiag,
       },
       mode: {
         local: mode.localMode,
@@ -1219,7 +1217,7 @@ export function apply(ctx) {
     const qqCfg = readQqConfig().config ?? {};
     const snow = qqCfg.snowluma ?? {};
     let snowState = { state: 'unknown', hint: '' };
-    try { snowState = await diagnoseSnowLuma(snow); } catch {}
+    try { snowState = await diagnoseNapCat({ config: snow, bridge: await bridgeStatus() }); } catch {}
     const bridgeSrc = path.join(QQBOT_ROOT, 'src', 'bridge.js');
     return buildInstallChecks({
       nodeVersion: process.versions.node,
@@ -1294,18 +1292,14 @@ export function apply(ctx) {
       const changed = doctorFix({ ownerQQ: opts.ownerQQ });
       done(cfgStep, true, changed.length ? changed.join('、') : '已经齐了');
 
-      // 4) SnowLuma 端点 / token
-      const snowStep = installStep('snowluma', '发现并写入 SnowLuma 连接');
+      // 4) 只验证已有 NapCat 连接，不从旧 SnowLuma 配置猜端口或覆盖令牌。
+      const snowStep = installStep('napcat', '检查 NapCat OneBot 连接');
       try {
-        const found = await discoverSnowLumaConnection({ cfg: readQqConfig().config ?? {}, timeoutMs: 4000 });
-        if (found.ok) {
-          const snow = { httpUrl: found.baseUrl };
-          if (found.wsUrl) snow.wsUrl = found.wsUrl;
-          if (found.token) snow.accessToken = found.token;
-          saveQqConfig({ snowluma: snow });
-          done(snowStep, true, `已连上 ${found.self?.nickname ?? ''}（${found.self?.user_id ?? ''}）`);
+        const found = await diagnoseNapCat({ config: readQqConfig().config?.snowluma, bridge: await bridgeStatus(), timeoutMs: 4000 });
+        if (found.http.state === 'ok' && found.accountOnline === true && found.ws.state === 'listening') {
+          done(snowStep, true, 'NapCat 已响应且账号在线；保留现有连接配置');
         } else {
-          done(snowStep, false, String(found.error ?? '没连上：先启动 SnowLuma 并扫码登录'));
+          done(snowStep, false, found.hint || 'NapCat 尚未就绪');
         }
       } catch (error) { done(snowStep, false, String(error?.message ?? error)); }
 
@@ -1377,11 +1371,7 @@ export function apply(ctx) {
       add('QQ→B站记忆', qqMemoryOn ? fs.existsSync(activeMemoryPaths().qqForBili) : true,
         qqMemoryOn ? maskPath(activeMemoryPaths().qqForBili) : '未开启（正常）');
       add('B站→QQ简报', fs.existsSync(path.join(activePlatformStateDir(QQ_STATE_DIR()), 'bili-memory-brief.md')), '当前角色 bili/bili-memory-brief.md');
-      let ffmpeg = false;
-      try {
-        const result = await new Promise((resolve) => execFile('ffmpeg', ['-version'], { timeout: 5000, windowsHide: true }, (error) => resolve(!error)));
-        ffmpeg = result;
-      } catch {}
+      const ffmpeg = ffmpegInfo().ok;
       add('ffmpeg（可选）', ffmpeg, ffmpeg ? '可用' : '未安装：只影响“抽帧看画面”');
       let bridge = { running: false };
       try { bridge = await bridgeStatus(); } catch {}
@@ -1422,42 +1412,28 @@ export function apply(ctx) {
       return;
     }
     const body = JSON.parse(await readBody(req) || '{}');
-    // ── 一键安装：发现 SnowLuma → 拉群 → 写配置（只写这一台机器上真实存在的群）
+    // ── 一键安装：验证已配置的 NapCat → 拉群（只读，不重写网关配置）
     if (body.action === 'install-scan') {
       const cfg = readQqConfig().config ?? {};
-      let found = { ok: false, error: '未探测' };
-      try { found = await discoverSnowLumaConnection({ cfg, timeoutMs: 4000 }); } catch (error) { found = { ok: false, error: String(error?.message ?? error) }; }
-      let groups = [];
-      if (found.ok) {
-        try {
-          const resp = await fetch(`${found.baseUrl}/get_group_list`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(found.token ? { Authorization: `Bearer ${found.token}` } : {}) },
-            body: '{}',
-          });
-          const data = await resp.json().catch(() => ({}));
-          groups = (Array.isArray(data?.data) ? data.data : [])
-            .map((g) => ({ id: String(g.group_id ?? ''), name: String(g.group_name ?? '') }))
-            .filter((g) => /^\d{5,15}$/.test(g.id));
-        } catch {}
-      }
+      const found = await diagnoseNapCat({ config: cfg.snowluma, bridge: await bridgeStatus(), timeoutMs: 4000 });
+      const online = found.http.state === 'ok' && found.accountOnline === true && found.ws.state === 'listening';
+      const groups = online ? await napcatGroups(cfg.snowluma) : [];
       json(res, 200, {
-        ok: found.ok,
-        error: found.ok ? '' : String(found.error ?? '连不上 SnowLuma'),
+        ok: online,
+        error: online ? '' : (found.hint || 'NapCat 尚未就绪'),
         snow: {
-          online: Boolean(found.ok),
-          uin: String(found.self?.user_id ?? ''),
-          nickname: String(found.self?.nickname ?? ''),
-          httpUrl: found.baseUrl ?? '',
-          wsUrl: found.wsUrl ?? '',
-          hasToken: Boolean(found.token),
-          wsToken: Boolean(found.wsToken),
+          online,
+          uin: found.login?.user_id ?? '',
+          nickname: found.login?.nickname ?? '',
+          httpUrl: found.http.address,
+          wsUrl: found.ws.address,
+          hasToken: Boolean(cfg.snowluma?.accessToken),
         },
         groups,
       });
       return;
     }
-    // ── 一键安装：把整机装成"能用"的状态（依赖 → 装进 DSH → 配置 → SnowLuma → 白名单 → 桥接）
+    // ── 一键安装：依赖 → 装进 DSH → 配置 → NapCat → 白名单 → 桥接
     if (body.action === 'install-run') {
       if (installJob.running) { json(res, 200, { ok: true, install: installJob }); return; }
       const opts = {
@@ -1474,20 +1450,7 @@ export function apply(ctx) {
     if (body.action === 'install-apply') {
       const changed = [];
       const cfg = readQqConfig().config ?? {};
-      // 1) 端点 / token：服务端再发现一次（不把 token 交给浏览器）
-      if (body.discoverSnow !== false) {
-        try {
-          const found = await discoverSnowLumaConnection({ cfg, timeoutMs: 4000 });
-          if (found.ok) {
-            const snow = { httpUrl: found.baseUrl };
-            if (found.wsUrl) snow.wsUrl = found.wsUrl;
-            if (found.token) snow.accessToken = found.token;
-            saveQqConfig({ snowluma: snow });
-            changed.push('写入 SnowLuma 地址与 token');
-          }
-        } catch {}
-      }
-      // 2) 主人 QQ（用户确认过的才写）
+      // 不自动改网关端点或令牌；主人 QQ 只写用户确认过的。
       const owner = String(body.ownerQQ ?? '').trim();
       if (/^\d{5,15}$/.test(owner)) {
         saveUnified({ admin: { qq: owner } });
@@ -1546,10 +1509,7 @@ export function apply(ctx) {
     json(res, 400, { ok: false, error: '未知 action' });
   }
 
-  // ── SnowLuma 启动（只打开本机已安装程序，不安装、不部署、不代扫码）──────
-  // 默认关闭；必须用户在设置页显式开启 snowluma.allowLaunch，且只在点击
-  // 「一键启动 / 打开 SnowLuma」时执行。源码/测试里的 L6 边界仍保持：
-  // MCP 工具面没有 start_snowluma，桥接本身也只探测不启动。
+  // ── NapCat 网关：只读诊断；仅在设置页显式点击启动时调用本机脚本 ──────
   function portOpen(port, timeout = 600) {
     return new Promise((resolve) => {
       const socket = net.connect({ port, host: '127.0.0.1' });
@@ -1561,169 +1521,13 @@ export function apply(ctx) {
     });
   }
 
-  function resolveSnowLumaLauncher() {
-    const cfg = readQqConfig().config?.snowluma ?? {};
-    const explicit = String(cfg.launchScript ?? '').trim();
-    if (explicit) return path.isAbsolute(explicit) ? explicit : path.resolve(QQBOT_ROOT, explicit);
-    const base = String(cfg.launcherPath ?? '').trim();
-    if (!base) return '';
-    const root = path.isAbsolute(base) ? base : path.resolve(QQBOT_ROOT, base);
-    const candidates = [
-      path.join(root, 'app', 'launcher.bat'),
-      path.join(root, 'launcher.bat'),
-      path.join(root, 'SnowLuma.exe'),
-    ];
-    return candidates.find((file) => { try { return fs.existsSync(file); } catch { return false; } }) ?? '';
+  async function diagnoseGateway(bridge = {}) {
+    return diagnoseNapCat({ config: readQqConfig().config?.snowluma, bridge });
   }
 
-  function findSnowLumaInstall() {
-    const cfg = readQqConfig().config?.snowluma ?? {};
-    const candidates = [];
-    const add = (value) => { const text = String(value ?? '').trim(); if (text) candidates.push(text); };
-    add(cfg.launcherPath);
-    add(process.env.SNOWLUMA_HOME);
-    add(process.env.SNOWLUMA_DIR);
-    for (const base of [
-      path.join(os.homedir(), 'SnowLuma2'),
-      path.join(os.homedir(), 'SnowLuma'),
-      path.join(os.homedir(), 'Desktop', 'SnowLuma2'),
-      path.join(os.homedir(), 'Downloads', 'SnowLuma2'),
-      path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'SnowLuma2'),
-      path.join(path.dirname(QQBOT_ROOT), 'SnowLuma2'),
-      path.join(process.env.ProgramFiles || 'C:/Program Files', 'SnowLuma2'),
-    ]) add(base);
-    for (const raw of candidates) {
-      const resolved = path.resolve(raw);
-      try {
-        if (fs.statSync(resolved).isFile()) {
-          if (/launcher\.bat$|SnowLuma\.exe$/i.test(resolved)) {
-            const dir = path.dirname(resolved);
-            const root = path.basename(dir).toLowerCase() === 'app' ? path.dirname(dir) : dir;
-            return { root, launcher: resolved };
-          }
-          continue;
-        }
-      } catch {}
-      for (const relative of ['app/launcher.bat', 'launcher.bat', 'SnowLuma.exe']) {
-        const launcher = path.join(resolved, relative);
-        try { if (fs.existsSync(launcher)) return { root: resolved, launcher }; } catch {}
-      }
-    }
-    return null;
-  }
-
-  // SnowLuma 没有原生窗口，它的界面是 WebUI（默认 http://127.0.0.1:5100）。
-  // 端口从 SnowLuma 自己的 runtime.json 读，读不到就回退 5100。
-  function snowLumaWebui() {
-    const cfg = readQqConfig().config?.snowluma ?? {};
-    let port = 5100;
-    try {
-      const root = String(cfg.launcherPath ?? '').trim();
-      if (root) {
-        const runtime = JSON.parse(fs.readFileSync(path.join(root, 'app', 'config', 'runtime.json'), 'utf8'));
-        if (Number(runtime?.webuiPort) > 0) port = Number(runtime.webuiPort);
-      }
-    } catch {}
-    return { port, url: `http://127.0.0.1:${port}` };
-  }
-
-  // 只用系统默认浏览器打开本地回环地址；URL 由端口拼出，不接受外部输入。
-  function openLocalUrl(url) {
-    if (process.env.SURFCORE_SKIP_AUTOSTART === '1') return false;
-    if (!/^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(String(url))) return false;
-    try {
-      spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'start', '""', `"${url}"`], {
-        detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true,
-      }).unref();
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  // SnowLuma 连不上时到底卡在哪一步：进程没起 / 停在登录页 / token 或端口不对。
-  // 桥接的 goodError 只有一句 fetch failed，光看它没法给用户任何可执行的信息。
-  async function diagnoseSnowLuma(bridgeSnow = {}) {
-    if (bridgeSnow.connected === true) return { state: 'ok', hint: '' };
-    const webui = snowLumaWebui();
-    const onebot = (await portOpen(3000)) || (await portOpen(3001));
-    const webuiUp = await portOpen(webui.port);
-    if (onebot) {
-      return {
-        state: 'onebot-rejected',
-        hint: 'OneBot 端口在监听但桥接连不上：多半是 accessToken 不匹配（对齐 config.json 的 snowluma.accessToken），或 httpUrl 指到了 WebSocket 端口',
-      };
-    }
-    if (webuiUp) {
-      return { state: 'needs-login', hint: `SnowLuma 已启动但还没登录：打开 ${webui.url} 扫码/登录` };
-    }
-    return { state: 'not-running', hint: 'SnowLuma 没在运行：设置 → SurfCore → 概览 → 一键启动（会按需打开控制台）' };
-  }
-
-  async function launchSnowLuma() {
-    if (process.env.SURFCORE_SKIP_AUTOSTART === '1') {
-      return { ok: true, skipped: true, message: '测试环境：跳过打开 SnowLuma' };
-    }
-    const cfg = readQqConfig().config?.snowluma ?? {};
-    if (cfg.allowLaunch !== true) {
-      return { ok: false, error: '未开启「允许插件打开 SnowLuma」：设置 → SurfCore → QQ → SnowLuma' };
-    }
-    const webui = snowLumaWebui();
-
-    // 已登录（OneBot 3000/3001 在听）：什么都不用做，也别弹窗口。
-    if (await portOpen(3000) || await portOpen(3001)) {
-      return { ok: true, already: true, opened: false, message: 'SnowLuma 已在运行且已登录' };
-    }
-
-    // 进程在、但 OneBot 没起 → 多半停在登录页：直接把 WebUI 打开让人扫码。
-    if (await portOpen(webui.port)) {
-      const opened = openLocalUrl(webui.url);
-      return {
-        ok: true,
-        needsLogin: true,
-        opened,
-        webui: webui.url,
-        message: opened ? `SnowLuma 在登录页，已打开控制台 ${webui.url}` : `SnowLuma 在登录页：请打开 ${webui.url} 扫码`,
-      };
-    }
-
-    const launcher = resolveSnowLumaLauncher();
-    if (!launcher) {
-      return { ok: false, error: '找不到 SnowLuma 启动脚本：请在设置里填「SnowLuma 安装目录」或「启动脚本」' };
-    }
-    try {
-      const cwd = path.dirname(launcher);
-      const lower = launcher.toLowerCase();
-      if (lower.endsWith('.bat') || lower.endsWith('.cmd')) {
-        // 2026-10-22 审计：旧写法把 basename 拼进 cmd 命令串，路径里带 `&` 可注入命令。
-        // 现在整条路径作为「verbatim 参数」交给 cmd，并且拒绝含引号/换行的路径。
-        if (/["\r\n]/.test(launcher)) return { ok: false, error: '启动脚本路径含引号或换行，拒绝执行' };
-        spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'start', '""', `"${launcher}"`], {
-          cwd, detached: true, stdio: 'ignore', windowsHide: false, windowsVerbatimArguments: true,
-        }).unref();
-      } else {
-        spawn(launcher, [], { cwd, detached: true, stdio: 'ignore', windowsHide: false }).unref();
-      }
-      // 等 WebUI 端口起来（最多 10 秒）：起来了就打开浏览器；没起来也给出地址让用户自己点。
-      const until = Date.now() + 10_000;
-      while (Date.now() < until) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        if (await portOpen(webui.port)) {
-          const opened = openLocalUrl(webui.url);
-          return {
-            ok: true,
-            started: true,
-            opened,
-            webui: webui.url,
-            launcher,
-            message: opened ? `已启动 SnowLuma 并打开控制台 ${webui.url}` : `已启动 SnowLuma：${webui.url}`,
-          };
-        }
-      }
-      return { ok: true, started: true, pending: true, webui: webui.url, launcher, message: `已启动 SnowLuma，控制台稍后可访问：${webui.url}` };
-    } catch (error) {
-      return { ok: false, error: `打开 SnowLuma 失败：${error?.message ?? error}` };
-    }
+  async function launchGateway(bridge = {}) {
+    const cfg = readQqConfig().config ?? {};
+    return launchNapCat({ root: QQBOT_ROOT, config: cfg.snowluma, napcat: cfg.napcat, bridge });
   }
 
   // ── 启动完成弹窗 ────────────────────────────────────────────────────────
@@ -1780,7 +1584,7 @@ export function apply(ctx) {
             '',
             ...(qq ? [
               `QQ 桥接：运行中（端口 ${bridge.port ?? 3100}，DSH 已连接）`,
-              `SnowLuma：已连接，QQ ${snow.accountOnline ? '在线' : '离线'}`,
+              `NapCat：已连接，QQ ${snow.accountOnline ? '在线' : '离线'}`,
             ] : ['QQ：启动开关关闭（未启动）']),
             ...(bili ? ['B站生物钟：运行中'] : ['B站：启动开关关闭（未启动）']),
           ];
@@ -1794,7 +1598,7 @@ export function apply(ctx) {
           last = { bridge, schedulerRunning };
           if (allReady(bridge, schedulerRunning)) {
             const snow = bridge?.snowluma ?? {};
-            pluginLog(`启动检查通过：qq=${qq} bili=${bili} DSH=${bridge.dshBaseUrl ?? '?'} SnowLuma=${snow.connected} 账号=${snow.accountOnline}`);
+            pluginLog(`启动检查通过：qq=${qq} bili=${bili} DSH=${bridge.dshBaseUrl ?? '?'} NapCat=${snow.connected} 账号=${snow.accountOnline}`);
             showStartupPopup('SurfCore 启动完成', successLines(bridge).join('\n'), 30);
             return;
           }
@@ -1815,7 +1619,7 @@ export function apply(ctx) {
         } catch {}
         const bridge = last?.bridge ?? {};
         const snow = bridge.snowluma ?? {};
-        const snowDiag = await diagnoseSnowLuma(snow).catch(() => ({ state: 'unknown', hint: '' }));
+        const snowDiag = await diagnoseGateway(bridge).catch(() => ({ state: 'unknown', hint: '' }));
         pluginLog(`启动检查未通过：qq=${qq} bili=${bili} running=${Boolean(bridge.running)} dshReady=${Boolean(bridge.dshReady)} dshBaseUrl=${bridge.dshBaseUrl ?? '?'} snow=${Boolean(snow.connected)} snowState=${snowDiag.state} account=${Boolean(snow.accountOnline)} scheduler=${Boolean(last?.schedulerRunning)}`);
         showStartupPopup('SurfCore 启动状态', [
           '还没全部就绪：',
@@ -1827,7 +1631,7 @@ export function apply(ctx) {
               : (bridge.dshBaseUrl && bridge.dshBaseUrl !== currentDshUrl()
                 ? `桥接还连着旧端口 ${bridge.dshBaseUrl}（当前 ${currentDshUrl()}）`
                 : 'DSH 已打开，但桥接还在鉴权/等待连接')}`,
-            `SnowLuma：${snow.connected ? '已连接' : `未就绪（${snowDiag.state}）`}`,
+            `NapCat：${snow.connected && snow.accountOnline === true ? '已连接，账号在线' : `未就绪（${snowDiag.state}）`}`,
             ...(snowDiag.hint ? [`   → ${snowDiag.hint}`] : []),
           ] : ['QQ：启动开关关闭（未启动）']),
           ...(bili ? [`B站生物钟：${last?.schedulerRunning ? '运行中' : '未启动'}`] : ['B站：启动开关关闭（未启动）']),
@@ -2129,18 +1933,20 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output 
       return;
     }
     if (action === 'start-qq') {
-      // 概览的「启动 QQ」：桥接 + 按需打开 SnowLuma（仍是用户显式点击，不自动弹）。
+      // 概览的「启动 QQ」：桥接和共享 NapCat；桥接已运行时仍可启动网关。
       if (!platformStartEnabled('qq')) {
         json(res, 409, { ok: false, error: 'QQ 启动开关已关闭：去「QQ」页打开「启动 QQ」并保存' });
         return;
       }
       const bridge = await startBridge({ dshWebUrl: currentDshUrl() });
-      const snowluma = await launchSnowLuma();
+      const napcat = await launchGateway(await bridgeStatus());
+      const ok = bridge?.ok !== false && napcat.ok !== false;
       json(res, 200, {
-        ok: bridge?.ok !== false,
-        message: [bridge?.message, snowluma?.message || snowluma?.error].filter(Boolean).join('；'),
+        ok,
+        message: [bridge?.message, napcat?.message || napcat?.error].filter(Boolean).join('；'),
+        ...(!ok ? { error: [bridge?.error, napcat?.error].filter(Boolean).join('；') || 'QQ 启动未完成' } : {}),
         bridge,
-        snowluma,
+        napcat,
       });
       return;
     }
@@ -2159,7 +1965,7 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output 
       return;
     }
     if (action === 'start-all') {
-      // 一键启动：按平台启动开关拉起 QQ 桥接 / B站生物钟；QQ 打开时才尝试打开 SnowLuma。
+      // 一键启动：按平台开关拉起桥接 / B站生物钟，QQ 打开时才启动 NapCat。
       const starts = platformStartState();
       const status = await bridgeStatus();
       const stale = bridgeStaleReason(status);
@@ -2170,38 +1976,44 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output 
       const schedulerState = starts.bili
         ? startSchedulerNow()
         : { ...idleSchedulerStatus('disabled'), message: 'B站 启动开关关闭，已跳过生物钟' };
-      const snowluma = starts.qq ? await launchSnowLuma() : { ok: true, skipped: true, message: 'QQ 启动开关关闭，已跳过 SnowLuma' };
-      const coreOk = (!starts.qq || bridge?.ok !== false) && (!starts.bili || schedulerState.running);
+      const napcat = starts.qq ? await launchGateway(await bridgeStatus()) : { ok: true, skipped: true, message: 'QQ 启动开关关闭，已跳过 NapCat' };
+      const coreOk = (!starts.qq || (bridge?.ok !== false && napcat.ok !== false)) && (!starts.bili || schedulerState.running);
       const message = [
         bridge?.message,
         starts.bili ? (schedulerState.running ? 'B站生物钟在跑' : 'B站生物钟未启动') : '',
-        snowluma?.message || snowluma?.error,
-        starts.qq || starts.bili ? '启动完成后会弹窗告诉你结果' : 'QQ 和 B站 的启动开关都关着，没有需要启动的平台',
+        napcat?.message || napcat?.error,
+        coreOk && (starts.qq || starts.bili) ? '启动完成后会弹窗告诉你结果' : (!starts.qq && !starts.bili ? 'QQ 和 B站 的启动开关都关着，没有需要启动的平台' : ''),
       ].filter(Boolean).join('；');
       json(res, 200, {
         ok: coreOk,
-        pending: starts.qq || starts.bili,
+        ...(!coreOk ? { error: [bridge?.error, napcat?.error, starts.bili && !schedulerState.running ? 'B站生物钟未启动' : ''].filter(Boolean).join('；') || '启动未完成' } : {}),
+        pending: coreOk && (starts.qq || starts.bili),
         message,
         bridge,
         scheduler: schedulerState,
-        snowluma,
+        napcat,
+        snowluma: napcat, // 旧客户端响应字段兼容，不表示启动 SnowLuma。
         platformStart: starts,
       });
-      if (starts.qq || starts.bili) void watchStartupCompletion(starts);
+      if (coreOk && (starts.qq || starts.bili)) void watchStartupCompletion(starts);
       return;
     }
-    if (action === 'start-snowluma') {
-      json(res, 200, await launchSnowLuma());
-      return;
-    }
-    if (action === 'detect-snowluma') {
-      const found = findSnowLumaInstall();
-      if (!found) {
-        json(res, 200, { ok: false, error: '没找到 SnowLuma：请先下载并解压 SnowLuma2，然后在 QQ → SnowLuma 里填安装目录' });
+    if (action === 'start-napcat' || action === 'start-snowluma') {
+      if (!platformStartEnabled('qq')) {
+        json(res, 409, { ok: false, error: 'QQ 启动开关已关闭：请先在 QQ 页打开并保存' });
         return;
       }
-      saveQqConfig({ snowluma: { launcherPath: found.root, allowLaunch: true } });
-      json(res, 200, { ok: true, found: true, path: found.root, launcher: found.launcher, message: `已找到 SnowLuma：${found.root}` });
+      json(res, 200, await launchGateway(await bridgeStatus()));
+      return;
+    }
+    if (action === 'detect-napcat' || action === 'detect-snowluma') {
+      const cfg = readQqConfig().config ?? {};
+      const found = findNapCatLauncher(QQBOT_ROOT, cfg.napcat);
+      if (!found) {
+        json(res, 200, { ok: false, error: '没找到 NapCat 启动脚本：请在 QQ 设置中填写 PowerShell 脚本路径' });
+        return;
+      }
+      json(res, 200, { ok: true, found: true, launcher: found, message: `已找到 NapCat 启动脚本：${found}` });
       return;
     }
     if (action === 'stop') { json(res, 200, await stopBridge()); return; }

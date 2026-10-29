@@ -41,5 +41,35 @@ const out = execFileSync(process.execPath, [path.join(import.meta.dirname, '..',
 });
 assert.match(out, /共 1 条/, `工具没有读到角色账本：${out.slice(0, 300)}`);
 
+// 分享索引读取当前角色自己的账本；没有角色来源时仍兼容旧账号目录。
+const { createBiliMemory, needsBiliMemoryRefresh } = await import('../src/bili-memory.js');
+assert.equal(needsBiliMemoryRefresh({ memoryEnabled: false, shareEnabled: true, shareGroupCount: 1 }), true);
+assert.equal(needsBiliMemoryRefresh({ memoryEnabled: false, shareEnabled: true, shareGroupCount: 0 }), false);
+assert.equal(needsBiliMemoryRefresh({ memoryEnabled: false, shareEnabled: false, shareGroupCount: 1 }), false);
+assert.equal(needsBiliMemoryRefresh({ memoryEnabled: false, shareEnabled: true, shareGroupCount: 1, platformEnabled: false }), false);
+assert.equal(needsBiliMemoryRefresh({ memoryEnabled: true, shareEnabled: false, shareGroupCount: 0 }), true);
+
+const roleDir = paths2.biliStateDir();
+const legacyDir = path.join(temp, '.dsh', 'surfcore', 'bili');
+const legacyOutput = path.join(temp, 'legacy-share-index');
+fs.mkdirSync(legacyDir, { recursive: true });
+fs.mkdirSync(legacyOutput, { recursive: true });
+const roleBv = 'BV11aa22bb33';
+const legacyBv = 'BV44cc55dd66';
+const reason = '这个视频节奏轻松有趣，画面里的小鱼在海里游来游去，故事结尾也很惊喜。';
+const makeScores = (bv) => ({ [today]: [{ bv, score: 15, reason, at: new Date().toISOString() }] });
+fs.writeFileSync(path.join(roleDir, 'scores.json'), JSON.stringify(makeScores(roleBv)));
+fs.writeFileSync(path.join(legacyDir, 'scores.json'), JSON.stringify(makeScores(legacyBv)));
+const titleCache = { items: { [roleBv]: { title: '角色自己的测试视频' }, [legacyBv]: { title: '旧目录测试视频' } } };
+fs.writeFileSync(path.join(roleDir, 'bili-video-titles.json'), JSON.stringify(titleCache));
+fs.writeFileSync(path.join(legacyOutput, 'bili-video-titles.json'), JSON.stringify(titleCache));
+const roleMemory = createBiliMemory({ home: temp, stateDir: roleDir, sourceDir: roleDir, log: () => {} });
+assert.equal((await roleMemory.refresh({ force: true })).ok, true);
+assert.equal(roleMemory.pickShareCard()?.bvid, roleBv, '角色分享池应使用当前角色的行为账本');
+assert.equal(JSON.parse(fs.readFileSync(roleMemory.paths.index, 'utf8')).entries.some((entry) => entry.bvid === legacyBv), false, '旧账号账本不得串进当前角色');
+const legacyMemory = createBiliMemory({ home: temp, stateDir: legacyOutput, log: () => {} });
+assert.equal((await legacyMemory.refresh({ force: true })).ok, true);
+assert.equal(legacyMemory.pickShareCard()?.bvid, legacyBv, '未指定角色来源时应继续读取旧账号账本');
+
 try { fs.rmSync(temp, { recursive: true, force: true }); } catch {}
 console.log('bili state paths tests OK');

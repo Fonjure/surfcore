@@ -10,6 +10,7 @@ import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { requiredGroupKeyword } from './group-required-wake.js';
 import { execFileSync } from 'node:child_process';
 import yaml from 'js-yaml';
 import { extractPresetPrefix, presetPromptBlockers, presetPromptWarnings, renderPresetPromptYaml } from './preset-prompt.js';
@@ -62,7 +63,7 @@ import { evaluateWakeBudget, evaluateOutbound, localDayStart } from './token-gua
 import {
   blockMessage, evaluateBudget, localDayKey, readBudget, readDailyUsage,
 } from './token-budget.js';
-import { createBiliMemory } from './bili-memory.js';
+import { createBiliMemory, needsBiliMemoryRefresh } from './bili-memory.js';
 import {
   appendMemoryInboxEvent, looksNoteworthyMessage, resolveMemoryCardPaths,
 } from './memory-card.js';
@@ -781,6 +782,8 @@ function loadConfig() {
       allowRemote: false,
       ...(file.dsh ?? {})
     },
+    // 本实例默认 NapCat；显式选择旧 SnowLuma 时才允许读取它的账号配置作自愈。
+    qqGateway: file.qqGateway === 'snowluma' ? 'snowluma' : 'napcat',
     snowluma: { wsUrl: 'ws://127.0.0.1:3001', accessToken: '', ...(file.snowluma ?? {}) },
     // 空 => 每个会话在 state/agents/<key> 下建独立工作目录
     sessionCwd: file.sessionCwd ?? '',
@@ -1764,7 +1767,11 @@ async function main() {
 
   // B站那边的角色：把公开经历做成记忆，注入 QQ 提示词；动态与每日分享在启动时排定。
   // 隐私：这个模块只读公开数据与公开见闻，不读任何私信文件。
-  const biliMemory = createBiliMemory({ stateDir: PLATFORM_STATE_DIR, log });
+  const biliMemory = createBiliMemory({
+    stateDir: PLATFORM_STATE_DIR,
+    sourceDir: ACTIVE_CHARACTER ? PLATFORM_STATE_DIR : undefined,
+    log,
+  });
   let biliDynamics = null;
   let biliShare = null;
 
@@ -3634,18 +3641,15 @@ async function main() {
     const now = Date.now();
     const agoMs = snowlumaHealth.lastPacketAt ? now - snowlumaHealth.lastPacketAt : null;
     const silent = snowlumaHealth.lastPacketAt > 0 && agoMs > SNOWLUMA_SILENCE_WARN_MS;
-    // 只有 SnowLuma **明确自报** good=false 才算"确认坏了"（接收链路）。
-    // 「静默」只能说明连它的进程/WS 都没动静了 —— 那是**另一个**故障面，措辞必须分开。
+    // 不同 OneBot 实现对 good 的含义可能不同；只能报告网关自评，不能推断具体故障原因。
     const confirmed = snowlumaHealth.good === false;
     let hint = null;
     if (confirmed) {
-      hint = 'SnowLuma 自报接收链路异常（good=false）：它的 [Hook] 收不到 QQ 客户端的数据，'
-        + '消息进不来。这不是桥接的问题。请查看 SnowLuma 的 logs/snowluma-*.log 里的 [Hook] 行'
-        + '（receive path stale / process enumeration timed out），并考虑升级 SnowLuma。';
+      hint = 'QQ 网关自报状态异常（good=false）；请检查 NapCat 的 QQ 登录和运行日志。'
+        + '此状态不能单独证明消息收发是否正常。';
     } else if (silent) {
       hint = `已连接但 ${Math.round(agoMs / 60000)} 分钟没有收到任何事件包（连 30 秒一次的心跳都没有）。`
-        + '这说明 SnowLuma 的 OneBot 服务/进程本身可能已经卡住或不在了，而不只是收不到 QQ 数据；'
-        + '请直接查看 SnowLuma 的 logs/snowluma-*.log。';
+        + 'NapCat 的 OneBot 服务或连接可能中断，请检查网关和桥接日志。';
     }
     return {
       // 只读 snowlumaHealth.connected（由 bot 的 open/close 维护），**不要**在这里引用
@@ -3670,13 +3674,11 @@ async function main() {
     if (snap.degraded && !snowlumaHealth.degraded) {
       snowlumaHealth.degraded = true;
       snowlumaHealth.reason = snap.hint ?? '';
-      log(`⚠️ SnowLuma 上游不健康：${snap.hint}`);
-      log('   这不是桥接的问题：桥接没有任何原生/注入面，也不控制 SnowLuma 或 QQ。');
-      log('   排查：SnowLuma 的 logs/snowluma-*.log 里搜 [Hook]（看是否有 "receive path stale" 或 "process enumeration timed out"）。');
+      log(`⚠️ QQ 网关状态异常：${snap.hint}`);
     } else if (!snap.degraded && snowlumaHealth.degraded) {
       snowlumaHealth.degraded = false;
       snowlumaHealth.reason = '';
-      log('✅ SnowLuma 上游已恢复正常（good≠false 且事件包在流动）');
+      log('✅ QQ 网关告警已解除（good≠false 且未检测到长时间静默）');
     }
   }
 
@@ -3743,7 +3745,7 @@ async function main() {
     // 挡不住本机进程。这里改成失败关闭：宁可启动时报错，也不要静默开着一个无鉴权的管理 API。
     if (!consoleToken) throw new Error('控制台令牌为空：拒绝以无鉴权方式启动控制台 API');
     if (!tokenValid && configuredToken) log(`控制台 config.consoleToken 长度/字符不合法，已忽略并回退到自动生成令牌`);
-    if (!configuredToken) log(`控制台未配置 consoleToken，已自动生成：${String(consoleToken).slice(0, 6)}…（完整值保存在 state/console-token）`);
+    if (!configuredToken) log('控制台未配置 consoleToken，已自动生成并保存到 state/console-token');
     // 二代会话级隔离：MCP 工具调用时若带 x-agent-token，则必须匹配该会话的 agentToken。
     // 控制台/管理端请求不带此头，仍走 consoleToken 管理通道。
     //
@@ -10100,7 +10102,7 @@ async function main() {
 
   function isDirectFishGuardWake(reason) {
     const base = String(reason ?? '').split(':')[0];
-    return ['atMention', 'nameMention', 'question', 'poke', 'admin', 'bootstrap'].includes(base);
+    return ['atMention', 'nameMention', 'question', 'poke', 'admin', 'bootstrap', 'requiredKeyword', 'requiredBootstrap'].includes(base);
   }
 
   function formatParticipationV2(st) {
@@ -12387,6 +12389,8 @@ async function main() {
 
   function evaluateWakeTriggerV2(key, st, event, kind, textContent, plainContent, quoteTargetIsSelf) {
     if (kind === 'private') return 'private';
+    const required = requiredGroupKeyword(kind, plainContent, cfg.socialV2?.wake?.requiredGroupKeywords);
+    if (required) return `requiredKeyword:${required}`;
     const tr = st.wakeConfig?.triggers ?? {};
     if (tr.anyMessage) return 'anyMessage';
     if (tr.atMention) {
@@ -12681,7 +12685,7 @@ async function main() {
     // 操作者预写的「初始提示词」（圈子主题/群内氛围等）：**只在首次唤醒**注入。
     // 放在最前面几段（角色/令牌之后）而不是末尾，是为了让它在长 prompt 里足够显眼；
     // 后续唤醒不再带它 —— 那时它已经在这条 DSH 会话的上下文里了。
-    const initialPromptText = reason === 'bootstrap' ? formatInitialPromptV2(key) : '';
+    const initialPromptText = reason === 'bootstrap' || String(reason).startsWith('requiredBootstrap:') ? formatInitialPromptV2(key) : '';
     const initialPromptLine = initialPromptText ? `${initialPromptText}\n\n` : '';
     // 二代模式不自动注入完整角色卡（让 AI 调 qq_get_prompt），但 B 站记忆必须每轮都在：
     // 否则群友问起「B站那个号」时，它会把自己当成另一个人。
@@ -12696,6 +12700,9 @@ async function main() {
     const memoryCardText = memoryCardPromptBlock();
     const memoryCardLine = memoryCardText ? `${memoryCardText}\n\n` : '';
     const base = roleLine + identityLine + provenanceLine + adminLine + biliLine + memoryCardLine + tokenLine + initialPromptLine + antiAiLine + proactiveLine + closureLine + stickerLine + stickerMatchLine + replyLine + statusLine + wakeLine + memoryLine + participationLine + fishGuardLine + tokenGuardLine + preSleepLine;
+    if (/^required(?:Keyword|Bootstrap):/.test(String(reason))) {
+      return `${base}【群消息必回】群友的当前消息包含老板指定的唤醒词「${String(reason).split(':').slice(1).join(':')}」。请查看未读消息，并使用 QQ 回复工具自然回应这条消息，不要仅标记已读或直接潜水。`;
+    }
     if (reason === 'bootstrap') {
       return `${base}【引导唤醒】你已接入 QQ 会话 ${key}。\n当前是二代仿真模式：你的文本输出不会自动发送到 QQ，所有发言必须通过工具完成。\n请先调用 qq_get_prompt 查看角色、推荐值、可用工具和状态；有待回应的消息先按首回复节奏处理，最后才用 qq_set_wake_config 设置你希望如何被唤醒。`;
     }
@@ -12956,6 +12963,8 @@ async function main() {
 
   const WAKE_PRIORITY = {
     private: 100,
+    requiredKeyword: 100,
+    requiredBootstrap: 100,
     atMention: 90,
     question: 80,
     speaker: 75,
@@ -13724,7 +13733,7 @@ async function main() {
         return;
       }
       const st = getSocialV2State(key);
-      const directed = !senderIsFish && (quoteTargetIsSelf || isDirectAddress(textContent, event, kind));
+      const directed = !senderIsFish && (quoteTargetIsSelf || isDirectAddress(textContent, event, kind) || Boolean(requiredGroupKeyword(kind, plainContent, cfg.socialV2?.wake?.requiredGroupKeywords)));
       // 鱼群保护：同一批 bot 同群时先闭嘴。只影响“自动参与群聊”，
       // 被直接叫到/管理员说话仍可回一句（规则可关）。
       const fish = evaluateConversationFishGuard(key, st, {
@@ -13748,7 +13757,8 @@ async function main() {
       if (!st.bootstrapSent) {
         st.bootstrapSent = true;
         saveSocialV2State();
-        scheduleWakeV2(key, 'bootstrap');
+        const required = requiredGroupKeyword(kind, plainContent, cfg.socialV2?.wake?.requiredGroupKeywords);
+        scheduleWakeV2(key, required ? `requiredBootstrap:${required}` : 'bootstrap');
       } else {
         const reason = evaluateWakeTriggerV2(key, st, event, kind, textContent, plainContent, quoteTargetIsSelf);
         if (reason) {
@@ -14795,7 +14805,7 @@ async function main() {
     // 用实际连接地址（自愈后可能与 config 里的初值不同，别打印过期的那个）
     const connectedUrl = bot.url ?? cfg.snowluma.wsUrl;
     snowlumaHealth.connected = true;
-    log(`SnowLuma 已连接：${connectedUrl}`);
+    log(`QQ 网关已连接：${connectedUrl}`);
     // 「已连接」只说明与 SnowLuma 的 WebSocket 通了，**不说明 QQ 侧收得到消息** ——
     // 这个区别见 startSnowlumaWatch 的说明。这里顺手把上游健康快照刷一次。
     void pollSnowlumaStatus();
@@ -14854,9 +14864,9 @@ async function main() {
     // 端口也是 per-account 的（实测：换账号后 WS 从 3001 之类变到别的端口），
     // 只换 token 不换 URL 会一直 1006 重连。
     bot.url = wsUrl;
-    if (wsChanged) log(`🔄 SnowLuma WS 连接已更新：${wsUrl}（token ${String(wsToken).slice(0, 4)}…）`);
+    if (wsChanged) log(`🔄 SnowLuma WS 连接已更新：${wsUrl}（token 已更新）`);
     if (cfg.snowluma.accessToken !== httpToken) {
-      log(`🔄 SnowLuma HTTP token 已更新（来源 ${r.source}）：${String(cfg.snowluma.accessToken).slice(0, 4)}… → ${String(httpToken).slice(0, 4)}…`);
+      log(`🔄 SnowLuma HTTP token 已更新（来源 ${r.source}）`);
       cfg.snowluma.accessToken = httpToken;
     }
     if (!followEndpoint && r.wsUrl && r.wsUrl !== cfg.snowluma.wsUrl) {
@@ -14917,7 +14927,7 @@ async function main() {
 
   bot.on('close', (info) => {
     snowlumaHealth.connected = false;
-    log(`SnowLuma 连接断开（code=${info?.code ?? '?'}），重连中…`);
+    log(`QQ 网关连接断开（code=${info?.code ?? '?'}），重连中…`);
     // 连不上时最常见的原因就是换了 QQ 账号 → token 变了；顺手自愈。
     // 注意 1006 在**每次启动**都可能出现一次：HTTP token 与 WS token 是两个不同的值，
     // config.json 里存的是前者，WS 需要用自愈发现的那个（详见 bot.connect() 处的说明）。
@@ -14930,7 +14940,7 @@ async function main() {
     const detail = error && typeof error === 'object'
       ? [error.code, error.message, error.reason, error.type].filter(Boolean).join(' | ') || JSON.stringify(error)
       : String(error ?? '');
-    log(`SnowLuma 错误：${detail || '(无详情)'}`);
+    log(`QQ 网关错误：${detail || '(无详情)'}`);
     void healTokenIfStale(`error ${detail}`.trim().slice(0, 200));
   });
 
@@ -14943,7 +14953,7 @@ async function main() {
     // → 重连成功后才是「SnowLuma 已连接」。若 homeDir 没配/被移动/读不到 SnowLuma 的
     // config/onebot_<QQ>.json，自愈就无从下手，这时才会一直连不上 —— 那种情况请查
     // 日志里的「token 自愈失败」与 config.json 的 snowluma.homeDir。
-    log(`SnowLuma 首次连接未成功（将在后台自动重连并尝试自愈 WS token）: ${error?.message ?? error}`);
+    log(`QQ 网关首次连接未成功（将在后台自动重连）: ${error?.message ?? error}`);
   });
   log('桥接已启动。按 Ctrl+C 退出。');
   // 预热表情库：启动时同步一次 QQ 收藏表情，失败不阻塞（AI 首次调用工具时还会再试）。
@@ -14976,9 +14986,22 @@ async function main() {
   if (cfg.biliBridge?.enabled) {
     const shareGroups = biliGroupList(cfg.biliBridge.share.groups.length ? cfg.biliBridge.share.groups : cfg.allow.groups);
     const dynamicsGroups = biliGroupList(cfg.biliBridge.dynamics.groups.length ? cfg.biliBridge.dynamics.groups : cfg.allow.groups);
-    if (cfg.biliBridge.memory.enabled) {
-      void biliMemory.refresh({ force: true });
-      const t = setInterval(() => { void biliMemory.refresh(); }, cfg.biliBridge.memory.refreshIntervalMs);
+    // 分享池也需要索引，但“同步 B 站记忆到 QQ”关闭时仍不得向普通聊天注入记忆。
+    if (needsBiliMemoryRefresh({
+      memoryEnabled: cfg.biliBridge.memory.enabled,
+      shareEnabled: cfg.biliBridge.share.enabled,
+      shareGroupCount: shareGroups.length,
+    })) {
+      const refreshBiliIfEnabled = (force = false) => {
+        if (needsBiliMemoryRefresh({
+          memoryEnabled: cfg.biliBridge.memory.enabled,
+          shareEnabled: cfg.biliBridge.share.enabled,
+          shareGroupCount: shareGroups.length,
+          platformEnabled: biliStartEnabledByUnified(),
+        })) void biliMemory.refresh({ force });
+      };
+      refreshBiliIfEnabled(true);
+      const t = setInterval(refreshBiliIfEnabled, cfg.biliBridge.memory.refreshIntervalMs);
       t.unref?.();
     }
     if (cfg.biliBridge.dynamics.enabled && dynamicsGroups.length) {

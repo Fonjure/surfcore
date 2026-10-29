@@ -88,7 +88,7 @@ try {
   assert.equal(overview.data.scheduler.running, false, 'B站 开关关闭时生物钟不应运行');
   assert.equal(overview.data.scheduler.disabled, true, 'B站 开关关闭时 scheduler.disabled 应为 true');
 
-  for (const action of ['start-qq', 'start-bili']) {
+  for (const action of ['start-qq', 'start-bili', 'start-napcat']) {
     const res = await invoke(api, 'POST', '/dsh-surfcore/api/bridge', { action });
     assert.equal(res.status, 409, `${action} 在开关关闭时应拒绝`);
     assert.match(String(res.data.error ?? ''), /启动开关/, `${action} 的错误文案应说明开关关闭`);
@@ -99,7 +99,7 @@ try {
   assert.equal(all.status, 200);
   assert.equal(all.data.bridge?.skipped, true, 'QQ 关闭时一键启动应跳过桥接');
   assert.equal(all.data.scheduler?.disabled, true, 'B站 关闭时一键启动应跳过生物钟');
-  assert.equal(all.data.snowluma?.skipped, true, 'QQ 关闭时一键启动不应打开 SnowLuma');
+  assert.equal(all.data.napcat?.skipped, true, 'QQ 关闭时一键启动不应打开 NapCat');
 
   // 保存配置时把开关打开（跳过真实进程，只验证配置落盘与返回值）。
   const saved = await invoke(api, 'POST', '/dsh-surfcore/api/config', {

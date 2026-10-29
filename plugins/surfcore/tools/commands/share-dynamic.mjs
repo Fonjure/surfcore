@@ -51,6 +51,10 @@ if (dry && go) { console.error('--dry 和 --go 只能选一个'); process.exit(2
 if (!dry && !go) { console.error('必须显式 --dry 或 --go'); process.exit(2) }
 
 const cfg = config()
+if (cfg.share?.via !== 'dynamic' || cfg.dynamics?.enabled === false) {
+  console.error('动态分享已关闭：请检查分享方式与动态总开关')
+  process.exit(3)
+}
 if (cfg.share?.enabled === false) {
   console.error('分享已在设置里关闭（share.enabled=false）')
   process.exit(3)
@@ -175,7 +179,7 @@ try {
 } catch (e) {
   console.log(`  ⚠️ 写 daily-dynamic.json 失败（间隔可能不准）：${String(e?.message ?? e).slice(0, 80)}`)
 }
-recordQuota({ type: 'comment', target: `BV:${bvid}`, note: `动态分享 ${finalText.slice(0, 30)}`, auto: true, share: true })
+recordQuota({ type: 'dynamic', target: `BV:${bvid}`, note: `动态分享 ${finalText.slice(0, 30)}`, auto: true, share: true })
 
 // 报备（走用户配置的通知通道；失败不影响已发出的动态）
 try {

@@ -22,6 +22,9 @@ const comment = (over = {}) => ({
   assert.equal(classifyComment(comment({ parent: '321', reply: true, ta: true })).kind, 'ta');
   assert.equal(classifyComment(comment({ parent: '321', mine: true })).kind, 'mine');
   assert.equal(classifyComment(comment({ share: true })).kind, 'share');
+  assert.equal(classifyComment(comment({ share: true, note: '动态分享 一段正文' })).kind, 'dynamic');
+  assert.equal(classifyComment(comment({ type: 'dynamic', share: true })).kind, 'dynamic');
+  assert.match(classifyComment(comment({ share: true })).label, /待核实/);
   assert.equal(classifyComment(comment({ type: 'like' })), null);
   assert.equal(classifyComment(comment({ at: 'not-a-date' })), null);
   assert.equal(classifyComment(comment({ target: 'oid:123' })), null, '没有 BV 的评论无法挂到观看历史');

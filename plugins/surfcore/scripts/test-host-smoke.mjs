@@ -154,11 +154,11 @@ for (const path of ['/dsh-surfcore/api/overview', '/dsh-surfcore/api/config', '/
   }
 }
 
-// 一键启动里的 SnowLuma 分支：测试环境跳过真实弹窗，只验证路由/鉴权/响应。
-const sl = await invoke(apiRoute, 'POST', '/dsh-surfcore/api/bridge', { action: 'start-snowluma' });
+// NapCat 分支：测试环境跳过真实启动，只验证路由/鉴权/响应。
+const sl = await invoke(apiRoute, 'POST', '/dsh-surfcore/api/bridge', { action: 'start-napcat' });
 const slData = JSON.parse(sl.body || '{}');
-console.log('start-snowluma', sl.statusCode, slData.ok, slData.skipped, slData.message);
-if (sl.statusCode !== 200 || slData.ok !== true) throw new Error('start-snowluma 路由未通过');
+console.log('start-napcat', sl.statusCode, slData.ok, slData.skipped, slData.message);
+if (sl.statusCode !== 200 || slData.ok !== true) throw new Error('start-napcat 路由未通过');
 
 // 扫码登录：只读状态接口 + 非法 id（不启动 Edge / 不真扫码）。
 const accRes = await invoke(apiRoute, 'GET', '/dsh-surfcore/api/bili/accounts');

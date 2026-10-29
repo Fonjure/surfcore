@@ -18,7 +18,7 @@
 
 出问题让 TA 双击 **3-自检.bat**，把生成的 `诊断报告.txt` 发回来。
 
-> 安装包不需要 git，但**仍需要**先装好 Node ≥22.13、DSH、SnowLuma（第三方，不能代装）。
+> 安装包不需要 git，但**仍需要**先装好 Node ≥22.13、DSH 和 NapCat OneBot 网关；启动脚本需适配自己的安装。
 
 ## 0.1 手动安装：开始前，先确认这四样
 
@@ -40,31 +40,23 @@ git --version    # 需要能输出 git version 2.x
 
 - Node：<https://nodejs.org/> 下 **LTS**（≥22.13），装完**重开终端**再 `node -v`；
 - DSH：按你拿到的方式安装，能进 Web GUI 就行；
-- SnowLuma：见第 2 步。
+- NapCat：见第 1 步。
 
 > ⚠️ 不要把 git 链接直接丢给 DSH。原因见 [§10 为什么不支持](#10-为什么不能把-git-链接丢给-dsh)。
 
 ---
 
-## 1. 装 SnowLuma（收 QQ 必需）
+## 1. 准备 NapCat（收 QQ 必需）
 
-SnowLuma 是第三方的 QQ 运行时，**本项目不打包、不代装**（EULA §5.4），你自己下：
-
-1. 打开 <https://github.com/SnowLuma/SnowLuma/releases/latest>；
-2. 下载最新的 Windows 压缩包，解压到一个**路径里没有中文和空格**的目录（例如 `D:\SnowLuma`）；
-3. 运行里面的启动程序，**用你的 QQ 扫码登录**（建议先用小号）；
-4. 登录后打开它的 **OneBot v11** 设置，记下三样东西：
+使用已安装并登录的 NapCat，打开 **OneBot v11 HTTP 服务和正向 WebSocket 服务**。确认端口和访问令牌；现有安装可以共用，避免重复登录。
 
 | 要记的 | 默认值 | 在哪看 |
 | --- | --- | --- |
-| HTTP 端口 | `3000` | OneBot / 接口设置 |
-| WebSocket 端口 | `3001` | 同上 |
-| access token | 可能为空 | 同上（如果有，一定要记下来） |
+| HTTP 端口 | 以实际配置为准 | OneBot HTTP 服务 |
+| WebSocket 端口 | 以实际配置为准 | OneBot 正向 WebSocket 服务 |
+| access token | 两个服务需与 SurfCore 配置一致 | OneBot 服务配置 |
 
-> 端口被占用时 SnowLuma 会自动换端口，**以它界面上显示的为准**。
-
-> 注入失败（`connect ETIMEDOUT \.\pipe\mojo.…`）、检测不到、控制台连不上、
-> 「有正在进行的任务不让关」等，见 [SnowLuma 排错](SNOWLUMA_TROUBLESHOOT.md)。
+> 本机现有安装的 HTTP/WS 端口分别为 6200/6201，仅监听本机；其他安装请填写各自的端口。启动脚本并非通用安装器，需要对应已有的 NapCat 安装。登录需要用户处理。
 
 ---
 
@@ -91,15 +83,20 @@ copy config.example.json config.json
 
 然后用记事本 / VS Code 打开 `config.json`，**只改这 4 处**：
 
-### 3.1 SnowLuma 连接
+### 3.1 NapCat OneBot 连接
 
 ```jsonc
 "snowluma": {
   "wsUrl": "ws://127.0.0.1:3001",       // 第 1 步记的 WS 端口
   "httpUrl": "http://127.0.0.1:3000",   // 第 1 步记的 HTTP 端口
-  "accessToken": ""                      // 有就填，没有留空
+  "accessToken": "",                     // 填 OneBot 的共享令牌
+  "followDiscoveredEndpoint": false      // 不跟随旧 SnowLuma 的自发现端点
 }
 ```
+
+字段名 `snowluma` 保留给旧桥接和 SDK，实际运行的是所配置的 NapCat。按需在设置页填写 `napcat.launchScript`；本机用项目根目录的 `Start-NapCat.ps1`，它依赖旁边的大肥鱼安装及其已保存的登录信息。
+
+`qqGateway` 缺省为 `napcat`；此模式下桥接重连不读取旧 SnowLuma 的账号文件或环境变量。只有继续使用旧网关时才显式设置 `"qqGateway": "snowluma"`。
 
 ### 3.2 你是谁（管理员）
 
@@ -163,7 +160,7 @@ node scripts/setup-dsh.mjs desktop
 npm start
 ```
 
-看到控制台打印 `[bridge] OneBot 已连接` 就说明连上了 SnowLuma。
+设置页「诊断」分别检查 NapCat HTTP、WebSocket 端口、QQ 账号和桥接连接；连接状态不等同于真实消息收发已验证。
 
 ---
 
@@ -224,7 +221,7 @@ node scripts\fetch-models.mjs      # 下载模型并校验
 | 症状 | 原因 | 解决 |
 | --- | --- | --- |
 | 设置页没有 SurfCore | 没装进 DSH / 没重启 | 重跑 `node scripts/setup-dsh.mjs`，**完全退出 DSH 再开** |
-| 桥接起来了，但收不到消息 | SnowLuma 没登录 / token 不对 / 端口不对 | 看控制台「运行总览」；核对 `snowluma.*` 与 SnowLuma 界面上的端口 |
+| 桥接起来了，但收不到消息 | NapCat 没登录 / token 不对 / 端口不对 | 看设置页「诊断」；核对 `snowluma.*` 与 NapCat OneBot 服务配置 |
 | 群里 @ 她没反应 | 白名单没加群 / 已暂停 / 模式不对 | 设置 → QQ → 白名单；控制台确认没暂停 |
 | 她只会聊天，不调工具 | MCP 没挂上 / 工具被安全守卫限制 | 重跑 setup；看设置页工具开关 |
 | 控制台 401 | 没带 token | 地址后面加 `?token=…` |
@@ -254,7 +251,7 @@ DSH 能装"纯前端插件/技能"，但 SurfCore 不是那种东西：
 | 一个**独立进程**（`src/bridge.js`） | 需要能起子进程、写 pid、单实例锁 |
 | 往 profile 写 **preset + MCP + bundle** | 需要跑 `setup-dsh.mjs` |
 | 一份**要你填的配置** | 链接里没有你的 QQ 号/白名单/端口 |
-| SnowLuma 扫码 | 只能你自己扫 |
+| QQ 登录 | 需要用户自行处理 NapCat 的登录 |
 
 所以它走的是"**克隆 → 安装 → 配置 → 装进 DSH**"这四步，不是"点一下装好"。
 

@@ -1791,7 +1791,7 @@ button:active:not(:disabled) {
       <div id="connectionAlert" class="connection-alert" role="alert" hidden></div>
       <div id="overviewSummary" class="overview-summary span-all" data-page="overview">
         <div class="metric"><span>DSH 连接</span><strong id="metricDsh">连接中</strong><small id="metricDshHint">等待服务响应</small></div>
-        <div class="metric"><span>SnowLuma 上游</span><strong id="metricSnowluma">读取中</strong><small id="metricSnowlumaHint">等待网关健康上报</small></div>
+        <div class="metric"><span>NapCat 网关</span><strong id="metricSnowluma">读取中</strong><small id="metricSnowlumaHint">等待网关健康上报</small></div>
         <div class="metric"><span>当前运行模式</span><strong id="metricMode">—</strong><small id="metricRole">正在读取角色</small></div>
         <button class="metric metric-link" data-view="sessions"><span>已建立会话</span><strong id="metricSessions">—</strong><small>查看会话映射 <span aria-hidden="true">↗</span></small></button>
         <button class="metric metric-link" data-view="sessions" data-target="section-pending"><span>待处理请求</span><strong id="metricPending">—</strong><small>提问与工具审批 <span aria-hidden="true">↗</span></small></button>
@@ -2150,7 +2150,7 @@ button:active:not(:disabled) {
       <div id="voiceList" class="meta" style="margin-top:8px">点「刷新语音库」加载…</div>
       <div class="meta" style="margin-top:6px">
         上限：时长 <code>maxSeconds</code>、体积 <code>maxBytes</code>、频率 <code>maxPerMinute</code>/<code>maxPerHour</code>（见下方配置区）。
-        命令行等价工具：<code>node scripts/send-voice.mjs list-voice</code>（经桥接）或 <code>node voice-cli.mjs</code>（独立工具，在上级 <code>voice-tool/</code> 里直连 SnowLuma）。
+        命令行等价工具：<code>node scripts/send-voice.mjs list-voice</code>（经桥接）或 <code>node voice-cli.mjs</code>（独立工具，在上级 <code>voice-tool/</code> 里直连 OneBot 网关）。
       </div>
 
       </div></details>
@@ -2314,7 +2314,7 @@ button:active:not(:disabled) {
         <button id="v2HistoryNow" class="small">立即检查一次</button>
         <span class="meta" id="v2HistoryMsg"></span>
       </div>
-      <div class="meta">桥接启动或 QQ 账号重新上线时，用 SnowLuma 的 OneBot 历史消息接口，把离线期间错过的白名单群/私聊补进未读（消息带 history=true），避免掉线期间的消息永久丢失。补到的消息不会重复触发鱼群/黑话；「主动醒一次」关掉后只并入未读，等下次有人说话时自然看到。</div>
+      <div class="meta">桥接启动或 QQ 账号重新上线时，用 OneBot 历史消息接口，把离线期间错过的白名单群/私聊补进未读（消息带 history=true）。补到的消息不会重复触发鱼群/黑话；「主动醒一次」关掉后只并入未读，等下次有人说话时自然看到。</div>
 
       </div></details>
 <details class="settings-group"><summary>反馈工具参数（qq_report_feedback）</summary><div class="settings-content">
@@ -2587,18 +2587,17 @@ button:active:not(:disabled) {
       <div class="meta">开启：回复被安全拦截时会在群里提示；关闭：直接沉默，只在日志/活动记录里留下记录。</div>
       <div id="stateDirWarn" style="display:none;margin-top:10px;padding:8px 10px;border-left:3px solid var(--warn,#d08700);background:rgba(208,135,0,.08)">
         <b>⚠️ state/ 目录权限未收紧</b>
-        <div class="meta" style="margin:4px 0">Windows 上改文件权限需要管理员身份，本次启动没能收紧 <code id="stateDirPath"></code>。它里面的控制台令牌、SnowLuma 令牌、各会话令牌与 QQ 聊天记录，本机任何已登录用户都可能读到。</div>
+        <div class="meta" style="margin:4px 0">Windows 上改文件权限需要管理员身份，本次启动没能收紧 <code id="stateDirPath"></code>。它里面的控制台令牌、QQ 网关令牌、各会话令牌与 QQ 聊天记录，本机任何已登录用户都可能读到。</div>
         <div class="meta">两种做法：① 用<b>管理员身份</b>打开终端执行下面这条命令（一次即可，可复制）；② 或者<b>用管理员身份重启桥接</b>，让它自己收紧。做完点下面的按钮复检。</div>
         <pre id="stateDirCmd" style="user-select:all;overflow:auto;margin:4px 0;padding:6px;background:rgba(127,127,127,.12);border-radius:4px"></pre>
         <button id="stateDirReharden" class="small">重新检测</button>
         <span class="meta" id="stateDirMsg"></span>
       </div>
       <div id="snowlumaWarn" style="display:none;margin-top:10px;padding:8px 10px;border-left:3px solid var(--warn,#d08700);background:rgba(208,135,0,.08)">
-        <b>⚠️ QQ 网关连着，但收不到 QQ 的数据</b>
+        <b>⚠️ QQ 网关状态异常或事件长时间静默</b>
         <div class="meta" style="margin:4px 0" id="snowlumaWarnHint"></div>
-        <div class="meta" id="snowlumaWarnDiag">最近一个上游事件包：<b id="snowlumaWarnPkt">unknown</b>；SnowLuma 自评接收链路 good=<b id="snowlumaWarnGood">unknown</b>。</div>
-        <div class="meta" style="margin:4px 0">这是 <b>SnowLuma 自己那边</b>的问题：它的 <code>[Hook]</code> 没能从 QQ 客户端取到数据，所以桥接的 WebSocket 连上了却始终没有内容可收。桥接没有原生 / 注入组件，也不改 SnowLuma，一条上游事件包都不会替你凭空造出来。</div>
-        <div class="meta">排查：打开 SnowLuma 的 <code>logs/snowluma-*.log</code>，搜 <code>[Hook]</code>，看有没有 <code>receive path stale</code> / <code>process enumeration timed out</code> 这类行；顺带考虑<b>升级 SnowLuma</b>（新版运行时对 hook 的兜底更好）。桥接这边不用重启。</div>
+        <div class="meta" id="snowlumaWarnDiag">最近一个上游事件包：<b id="snowlumaWarnPkt">unknown</b>；网关状态：<b id="snowlumaWarnGood">unknown</b>。</div>
+        <div class="meta" style="margin:4px 0">请检查 NapCat 的 QQ 登录、OneBot 连接和网关日志；心跳与网关自评无法单独证明真实消息收发成功。</div>
       </div>
     </section>
 <section id="section-token" data-page="access" class="card">
@@ -2803,22 +2802,22 @@ function renderSnowlumaHealth(sl) {
   const receiving = Number.isFinite(ago);
   const goodText = sl.good === true ? 'good=true' : sl.good === false ? 'good=false' : 'good 未知';
   if (degraded) {
-    strong.textContent = '已连接 · 未接收';
+    strong.textContent = '网关状态异常';
     strong.className = 'err';
-    hint.textContent = '网关连着，但 QQ 侧数据没到';
+    hint.textContent = '查看网关状态与最近事件';
   } else if (!connected) {
     strong.textContent = '未连接';
     strong.className = 'err';
-    hint.textContent = '连不上 QQ 网关，请先启动 SnowLuma';
+    hint.textContent = '连不上 QQ 网关，请先启动 NapCat';
   } else {
-    strong.textContent = '正常 · 接收中';
+    strong.textContent = '已连接';
     strong.className = 'ok';
     hint.textContent = (receiving ? '最近一份上游事件包在 ' + fmtAgoMs(ago) + '前 · ' : '')
       + (sl.good === false ? 'good=false' : sl.good === true ? 'good=true' : 'good 未上报');
   }
   if (!degraded) { el.style.display = 'none'; return; }
   document.getElementById('snowlumaWarnHint').textContent = sl.hint
-    || '桥接与 QQ 网关的 WebSocket 连着，但一直收不到 QQ 侧的数据。';
+    || 'QQ 网关状态异常或长时间没有事件，请检查 NapCat。';
   document.getElementById('snowlumaWarnPkt').textContent = (receiving ? fmtAgoMs(ago) + '前' : '从未收到')
     + (sl.lastPacketKind ? '（' + sl.lastPacketKind + '）' : '');
   document.getElementById('snowlumaWarnGood').textContent = goodText;

@@ -10,7 +10,7 @@ const base = {
   groups: ['100000004'],
   privates: ['1000000001'],
   snow: { wsUrl: 'ws://127.0.0.1:3001', httpUrl: 'http://127.0.0.1:3000' },
-  snowState: { state: 'connected' },
+  snowState: { state: 'ok', http: { state: 'ok' }, ws: { state: 'listening' }, accountOnline: true, bridgeConnected: true },
   bridgeSrc: true,
   bridgeMasked: 'D:/surfcore/src/bridge.js',
   profile: 'web',
@@ -47,12 +47,22 @@ const base = {
   assert.ok(item.fix.includes('setup-dsh.mjs'));
 }
 
-// 5) Node 太老 / SnowLuma 离线（warn，不阻塞）
+// 5) Node 太老 / NapCat 离线（warn，不阻塞）
 {
   const checks = buildInstallChecks({ ...base, nodeVersion: '20.11.0', snowState: { state: 'offline' } });
   assert.equal(checks.find((c) => c.name === 'Node 版本').level, 'fail');
-  assert.equal(checks.find((c) => c.name === 'SnowLuma 在线').level, 'warn');
+  assert.equal(checks.find((c) => c.name === 'QQ 网关在线').level, 'warn');
   assert.equal(installOk(checks), false);
+}
+
+// 端口监听不能冒充账号在线或桥接已连；URL 不应回显查询参数里的令牌。
+{
+  const checks = buildInstallChecks({ ...base, snow: { ...base.snow, httpUrl: 'http://127.0.0.1:3000/?access_token=secret' },
+    snowState: { state: 'account-offline', http: { state: 'ok' }, ws: { state: 'listening' }, accountOnline: false, bridgeConnected: false } });
+  assert.equal(checks.find((c) => c.name === 'NapCat WebSocket 端口').level, 'ok');
+  assert.equal(checks.find((c) => c.name === 'NapCat QQ 账号').level, 'warn');
+  assert.equal(checks.find((c) => c.name === 'QQ 网关在线').level, 'warn');
+  assert.ok(!JSON.stringify(checks).includes('secret'));
 }
 
 // 6) 一键配置：只补缺失项，合法 QQ 才写

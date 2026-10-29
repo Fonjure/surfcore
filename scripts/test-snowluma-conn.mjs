@@ -75,6 +75,26 @@ console.log('## per-account token 解析（用临时目录造多账号场景）'
     ok(r.self?.user_id === 222, '回报当前账号', String(r.self?.user_id));
     ok(r.source === 'onebot_222.json', '标明 token 来源', r.source);
     ok(r.tried.length === 2, '记录了尝试过的候选', `${r.tried.length} 个`);
+    ok(r.tried.every((item) => item.token === '********'), '诊断结果不暴露令牌或其前缀');
+
+    // NapCat 即使碰巧使用同一 QQ，也不能借旧 SnowLuma 文件替换 WS token 或回退到旧网关。
+    const napcatCfg = { qqGateway: 'napcat', snowluma: { httpUrl: 'http://127.0.0.1:6200', wsUrl: 'ws://127.0.0.1:6201', accessToken: 'token-bbb' } };
+    const napcat = await discoverSnowLumaConnection({ cfg: napcatCfg, homeDirs: [home], timeoutMs: 500 });
+    ok(napcat.ok && napcat.source === 'config/env', 'NapCat 使用显式配置的 HTTP 连接');
+    ok(napcat.wsToken === null && napcat.wsUrl === null, 'NapCat 不读取旧 SnowLuma 的 WS token 或端点');
+    const napcatBad = await discoverSnowLumaConnection({ cfg: { ...napcatCfg, snowluma: { ...napcatCfg.snowluma, accessToken: 'wrong' } }, homeDirs: [home], timeoutMs: 500 });
+    ok(!napcatBad.ok && napcatBad.tried.length === 1, 'NapCat 令牌失效时不回退到旧网关');
+    const savedUrl = process.env.SNOWLUMA_HTTP_URL;
+    const savedToken = process.env.SNOWLUMA_TOKEN;
+    process.env.SNOWLUMA_HTTP_URL = 'http://127.0.0.1:9999';
+    process.env.SNOWLUMA_TOKEN = 'wrong';
+    try {
+      const envResult = await discoverSnowLumaConnection({ cfg: napcatCfg, homeDirs: [home], timeoutMs: 500 });
+      ok(envResult.ok && envResult.baseUrl === 'http://127.0.0.1:6200', 'NapCat 不受旧 SnowLuma 环境变量覆盖');
+    } finally {
+      if (savedUrl === undefined) delete process.env.SNOWLUMA_HTTP_URL; else process.env.SNOWLUMA_HTTP_URL = savedUrl;
+      if (savedToken === undefined) delete process.env.SNOWLUMA_TOKEN; else process.env.SNOWLUMA_TOKEN = savedToken;
+    }
 
     // 全部无效时要给出可操作错误
     globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({ status: 'failed', retcode: 1401 }) });

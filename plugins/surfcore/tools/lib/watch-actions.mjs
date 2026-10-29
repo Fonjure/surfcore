@@ -22,7 +22,7 @@ export const ACTION_LABELS = {
   reply: '回复别人',
   ta: '主动搭话',
   mine: '动态回复',
-  share: '分享评论·@主人',
+  share: '分享评论（@待核实）',
   favorite: '收藏',
   dynamic: '发过动态',
 };
@@ -45,10 +45,14 @@ function readJson(file, fallback = null) {
 
 /** 把 quota 的一条 comment 记账变成可展示的 action；不是评论/时间坏了返回 null。 */
 export function classifyComment(entry = {}) {
-  if (!entry || entry.type !== 'comment') return null;
+  if (!entry) return null;
+  const dynamicShare = entry.share && (entry.type === 'dynamic' || (entry.type === 'comment' && String(entry.note ?? '').startsWith('动态分享 ')));
+  if (entry.type !== 'comment' && !dynamicShare) return null;
   const at = isoDate(entry.at);
   if (!at) return null;
-  const kind = entry.share
+  const kind = dynamicShare
+    ? 'dynamic'
+    : entry.share
     ? 'share'
     : entry.mine
       ? 'mine'
@@ -62,7 +66,7 @@ export function classifyComment(entry = {}) {
   const bvid = bvOf(entry.target);
   if (!bvid) return null;
   return {
-    type: 'comment',
+    type: dynamicShare ? 'dynamic' : 'comment',
     kind,
     label: ACTION_LABELS[kind],
     at,

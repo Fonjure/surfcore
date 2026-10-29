@@ -5,6 +5,8 @@
  * 而读配置/探端口这些副作用留在 index.js 里。见 scripts/test-doctor.mjs。
  */
 
+import { safeEndpoint } from './napcat.js';
+
 /** @typedef {'ok'|'warn'|'fail'} CheckLevel */
 
 function nodeEnough(version) {
@@ -48,15 +50,27 @@ export function buildInstallChecks(ctx) {
     allowCount ? `${ctx.groups?.length ?? 0} 个群 / ${ctx.privates?.length ?? 0} 个私聊` : '白名单为空 = 谁都不理（第一次装最容易卡这）',
     allowCount ? '' : '设置 → QQ → 白名单，加入你的群号/QQ 号');
 
-  const snowFilled = Boolean(ctx.snow?.wsUrl && ctx.snow?.httpUrl);
-  add('SnowLuma 配置', snowFilled ? 'ok' : 'fail',
-    snowFilled ? `${ctx.snow.httpUrl} / ${ctx.snow.wsUrl}` : '没填 OneBot 的 HTTP/WS 地址',
-    snowFilled ? '' : '设置 → QQ → 连接，填 SnowLuma 界面上的端口');
+  const httpAddress = safeEndpoint(ctx.snow?.httpUrl, ['http:', 'https:']);
+  const wsAddress = safeEndpoint(ctx.snow?.wsUrl, ['ws:', 'wss:']);
+  const snowFilled = !httpAddress.startsWith('未配置') && !wsAddress.startsWith('未配置');
+  add('NapCat OneBot 配置', snowFilled ? 'ok' : 'fail',
+    snowFilled ? `${httpAddress} / ${wsAddress}` : 'OneBot 地址缺失、不是本机地址或含有不支持的参数',
+    snowFilled ? '' : '设置 → QQ → NapCat，填本机 OneBot HTTP 与正向 WebSocket 地址');
 
-  const snowOk = ['connected', 'ok', 'online'].includes(String(ctx.snowState?.state ?? ''));
-  add('SnowLuma 在线', snowOk ? 'ok' : 'warn',
-    snowOk ? '已连上' : `探测结果：${ctx.snowState?.state || 'unknown'}${ctx.snowState?.hint ? ` · ${ctx.snowState.hint}` : ''}`,
-    snowOk ? '' : '先启动 SnowLuma 并扫码登录');
+  const diag = ctx.snowState ?? {};
+  const snowOk = diag.state === 'ok';
+  add('NapCat HTTP', diag.http?.state === 'ok' ? 'ok' : 'warn',
+    diag.http?.state === 'ok' ? '已验证 OneBot HTTP 访问' : `HTTP 状态：${diag.http?.state || 'unknown'}`,
+    diag.http?.state === 'ok' ? '' : diag.hint || '检查 NapCat HTTP 地址和令牌');
+  add('NapCat WebSocket 端口', diag.ws?.state === 'listening' ? 'ok' : 'warn',
+    diag.ws?.state === 'listening' ? '端口在监听（不代表桥接已连接）' : `端口状态：${diag.ws?.state || 'unknown'}`,
+    diag.ws?.state === 'listening' ? '' : diag.hint || '检查 NapCat 正向 WebSocket');
+  add('NapCat QQ 账号', diag.accountOnline === true ? 'ok' : 'warn',
+    diag.accountOnline === true ? '在线' : (diag.accountOnline === false ? '离线' : '尚未确认'),
+    diag.accountOnline === true ? '' : diag.hint || '检查 QQ 登录');
+  add('QQ 网关在线', snowOk ? 'ok' : 'warn',
+    snowOk ? 'NapCat 账号在线且桥接已连接' : `探测结果：${diag.state || 'unknown'}${diag.hint ? ` · ${diag.hint}` : ''}`,
+    snowOk ? '' : '启动 NapCat 并登录，再检查桥接连接');
 
   add('QQ 桥接源码', ctx.bridgeSrc ? 'ok' : 'fail',
     ctx.bridgeSrc ? ctx.bridgeMasked : '没找到 src/bridge.js：安装目录选错了？');

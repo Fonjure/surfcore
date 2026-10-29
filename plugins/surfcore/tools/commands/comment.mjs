@@ -20,6 +20,7 @@ import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { config } from '../lib/config.mjs'
+import { ownerMentionMapping } from '../lib/owner-mention.mjs'
 // 2026-10-20（管理员定）：普通评论的硬闸门 —— 想说话就说话，但别把自己说成刷屏号 ✗
 //   一天 30 条 · 同一 UP 10 分钟 ≤1 · 同一视频 60 分钟 ≤1（默认值在 lib/limits.mjs；
 //   2026-10-22 起可在设置页 / bili.config.json 的 limits 段改）
@@ -131,6 +132,7 @@ if (SHARE) {
   if (!AUTO) { console.error('--share 必须与 --auto 同传（分享型也是"她自己决定说的"）'); process.exit(2) }
   const ow = config().owner ?? {}
   if (!ow.name) { console.error('--share 需要先配置 owner.name（要 @ 谁）'); process.exit(2) }
+  try { ownerMentionMapping(ow) } catch (e) { console.error(e.message); process.exit(2) }
   // ── 「标尺」（2026-10-18 加，Kimi 提议 + 主人认可）────────────────────
   // 把"值不值"从感觉变成可审计的流程：
   //   ① --reason  必填（白纸黑字写"为什么值得占用主人一次注意力"）
@@ -247,6 +249,10 @@ if (nav.code !== 0) {
   console.log('  → cookie 无效或已过期，先别发，重新复制一次')
   process.exit(4)
 }
+if (SHARE && String(nav.data?.mid ?? '') === String(config().owner?.mid ?? '')) {
+  console.error('分享评论的发送账号和被 @ 账号相同，无法可靠通知；请检查账号配置')
+  process.exit(3)
+}
 console.log(`  账号: ${nav.data.uname}   (mid ${nav.data.mid})`)
 console.log(`  手机绑定: ${nav.data.mobile_verified ? '是' : '否'}   硬币 ${nav.data.money}`)
 console.log('  ⚠️ 请确认这就是你的小号；若是主号，停手、换 cookie')
@@ -318,6 +324,7 @@ if (FISH_GATHER) {
 }
 
 const params = { type, oid: String(oid), message, plat: '1', csrf: String(cred.bili_jct) }
+if (SHARE) params.at_name_to_mid = JSON.stringify(ownerMentionMapping(config().owner))
 if (root) params.root = String(root)
 if (parent) params.parent = String(parent)
 const signed = await wbiSign(params)

@@ -126,9 +126,11 @@ export async function discoverSnowLumaConnection({
   timeoutMs = 6000
 } = {}) {
   const sl = cfg?.snowluma ?? cfg ?? {};
-  const base = String(baseUrl || process.env.SNOWLUMA_HTTP_URL || sl.httpUrl || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-  const homes = homeDirs ?? snowLumaHomeCandidates({ cfg });
-  const explicit = token || process.env.SNOWLUMA_TOKEN || sl.accessToken || '';
+  const napcat = cfg?.qqGateway === 'napcat';
+  const base = String(baseUrl || (napcat ? sl.httpUrl : (process.env.SNOWLUMA_HTTP_URL || sl.httpUrl)) || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+  // NapCat 的地址与令牌由当前配置明确指定；旧 SnowLuma 文件即使同账号也不能拿来替换。
+  const homes = napcat ? [] : (homeDirs ?? snowLumaHomeCandidates({ cfg }));
+  const explicit = napcat ? (token ?? sl.accessToken ?? '') : (token || process.env.SNOWLUMA_TOKEN || sl.accessToken || '');
 
   // 候选顺序：显式配置优先（尊重用户选择），然后才是 per-account 文件里的其它账号
   const candidates = [];
@@ -154,7 +156,7 @@ export async function discoverSnowLumaConnection({
   const tried = [];
   for (const c of candidates) {
     const r = await probe(c.url, c.token, timeoutMs);
-    tried.push({ source: c.source, url: c.url, token: c.token ? c.token.slice(0, 4) + '…' : '(空)', ok: r.ok, status: r.status, wording: r.wording });
+    tried.push({ source: c.source, url: c.url, token: c.token ? '********' : '(空)', ok: r.ok, status: r.status, wording: r.wording });
     if (r.ok) {
       // 找到有效 HTTP token 后，把**同一个账号**的 WS 信息也带回去：
       // 桥接走 WebSocket，用另一个 token、另一个端口 —— 只修 HTTP 的话桥接仍然 1006 重连。

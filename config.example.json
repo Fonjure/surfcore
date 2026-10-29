@@ -41,6 +41,7 @@
       "cardMode": "text"
     }
   },
+  "qqGateway": "napcat",
   "snowluma": {
     "wsUrl": "ws://127.0.0.1:3001",
     "httpUrl": "http://127.0.0.1:3000",
@@ -52,6 +53,10 @@
     "allowLaunch": false,
     "homeDir": "",
     "downloadUrl": "https://github.com/SnowLuma/SnowLuma/releases/latest"
+  },
+  "napcat": {
+    "allowLaunch": true,
+    "launchScript": "Start-NapCat.ps1"
   },
   "ownerQQ": null,
   "admin": null,

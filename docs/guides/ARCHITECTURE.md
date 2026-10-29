@@ -46,7 +46,7 @@ SurfCore 让一个 **DeepSeek Harness（DSH）agent** 活在一个真实的人�
 └──────┬───────────────────────────────┬───────────────────────────────┬──────────────────────┘
        │ OneBot v11 WS                 │ MCP (stdio)                    │ HTTP 127.0.0.1
 ┌──────▼──────────────┐   ┌────────────▼──────────────┐   ┌─────────────▼──────────────┐
-│ SnowLuma2（第三方）  │   │ DSH 的 MCP 客户端          │   │ 语音引擎（仓库外）           │
+│ NapCat（第三方）     │   │ DSH 的 MCP 客户端          │   │ 语音引擎（仓库外）           │
 │ 登录/收发/媒体 CDN    │   │  snowluma / -host / search │   │ 本地 :8765 / 云端 :8767      │
 └─────────────────────┘   └───────────────────────────┘   └────────────────────────────┘
 ```
@@ -54,8 +54,8 @@ SurfCore 让一个 **DeepSeek Harness（DSH）agent** 活在一个真实的人�
 | 进程 / 服务 | 谁启动 | 通信 | 挂了会怎样 |
 | --- | --- | --- | --- |
 | **DSH 宿主 + surfcore 插件** | 用户启动 DSH | 进程内 | 设置页、桌宠、B站调度、记忆卡全停（QQ 桥接仍运行，但 agent 回复没人接） |
-| **QQ 桥接**（`src/bridge.js`） | 插件按开关拉起 / 手动 `npm start` | HTTP+WS 到 DSH、WS 到 SnowLuma | QQ 收发全停；插件 2 分钟内自愈重启它（`plugins/surfcore/lib/index.js:2181`） |
-| **SnowLuma2** | 用户自己（EULA §5.4，本程序只探测不部署） | OneBot v11 WS | 桥接显示"未连接"，消息进不来 |
+| **QQ 桥接**（`src/bridge.js`） | 插件按开关拉起 / 手动 `npm start` | HTTP+WS 到 DSH、WS 到 NapCat | QQ 收发全停；插件会按平台开关自愈重启桥接 |
+| **NapCat** | 使用已安装实例；显式点击可调用配置的 PowerShell 启动脚本 | OneBot v11 HTTP + 正向 WS | 桥接显示未连接；其他机器人可以共用同一网关 |
 | **三个 MCP server** | DSH 的 MCP 客户端按 profile 配置拉起（stdio） | stdio | agent 失去 QQ 工具/搜索能力（表现为"只会说话不做事"） |
 | **语音引擎**（本地包 / 云包） | 设置页「启动」按钮 / `run.bat` | HTTP | 合成失败 → 返回 502 → 模型改回打字（不会伪造"我发了语音"） |
 | **桌宠**（仓库外 Electron） | 用户自己 | HTTP + `x-pet-token` | 目的载体回落 QQ；对话不可用 |
@@ -111,7 +111,7 @@ SurfCore 让一个 **DeepSeek Harness（DSH）agent** 活在一个真实的人�
 
 | | QQ 世界 | B站 世界 |
 | --- | --- | --- |
-| 身份 | 一个 QQ 号（SnowLuma 登录） | 一个 B站 账号（cookie 在 `bili/credentials.json`） |
+| 身份 | 一个 QQ 号（NapCat 登录） | 一个 B站 账号（cookie 在 `bili/credentials.json`） |
 | 消息单位 | 私聊 / 群聊 | 视频 / 动态 / 评论 / 私信 / 直播 |
 | 会话模型 | 每个 QQ 会话一个 DSH 会话 | 每个 B站 会话（`bili-whale-*`）一个 DSH 会话 |
 | 谁在驱动 | 桥接进程 | 插件里的 B站 调度器 |
@@ -150,7 +150,7 @@ SurfCore 让一个 **DeepSeek Harness（DSH）agent** 活在一个真实的人�
 ### 5.1 入站：群友说了一句话，到 agent 看见
 
 ```
-QQ 群 ──► SnowLuma ──WS──► 桥接
+QQ 群 ──► NapCat ──WS──► 桥接
                             ├─ ① 会话在 allow 里吗？（deny.users 黑名单先拦人）
                             ├─ ② 当前模式允许吗？（chat / closed-agent / reserved / reserved2）
                             ├─ ③ 敏感/被拉黑？丢弃并记审计
@@ -269,7 +269,7 @@ QQ 仍读仓库根的 `config.json`，B站 仍读自己的配置，插件只是�
 
 **明确的取舍**：
 
-- 不代用户操作账号（SnowLuma 只探测不部署、不代扫码，EULA §5.4）。
+- 网关登录由用户处理；插件只在用户明确点击时执行配置的 NapCat 启动脚本，不部署或代扫码。
 - 不采集、不外发没有授权的东西；出机清单写在 `LICENSE`。
 - 不可逆删除 = 事故：清理一律 `rename → _backups/` 或 `~/.dsh/_quarantine/`，可回滚。
 - 控制台是**单机回环** Web UI，不做多用户/远程管理。

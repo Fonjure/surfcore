@@ -153,12 +153,16 @@ function parseDiaryBlocks(text, fallbackDate) {
   return blocks;
 }
 
-/**
- * @param {{stateDir:string, home?:string, log?:(...args:any[])=>void}} options
- */
-export function createBiliMemory({ stateDir, home = os.homedir(), log = () => {} }) {
+/** 分享需要索引，但 B站平台关闭时不能只因为分享开关触发刷新。 */
+export function needsBiliMemoryRefresh({ memoryEnabled, shareEnabled, shareGroupCount = 0, platformEnabled = true } = {}) {
+  return memoryEnabled === true || (shareEnabled === true && platformEnabled !== false && shareGroupCount > 0);
+}
+
+/** @param {{stateDir:string, sourceDir?:string, home?:string, log?:(...args:any[])=>void}} options */
+export function createBiliMemory({ stateDir, sourceDir, home = os.homedir(), log = () => {} }) {
   const paths = {
     ...resolveBiliPaths(home),
+    ...(sourceDir ? { bili: sourceDir } : {}),
     doc: path.join(stateDir, 'bili-memory.md'),
     brief: path.join(stateDir, 'bili-memory-brief.md'),
     index: path.join(stateDir, 'bili-memory.json'),

@@ -9,6 +9,7 @@
 import { accountBili, biliState, biliStateDir } from './state-paths.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
+import { config } from './config.mjs'
 
 const HOME = process.env.USERPROFILE || process.env.HOME || '.'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
@@ -55,6 +56,7 @@ export async function findVideoDynamic(bvid, upMid, pages = 2) {
 
 /** 转发一条动态，正文自己写。返回 { ok, id, code, message } */
 export async function createForward(origId, text) {
+  if (config().dynamics?.enabled === false) throw new Error('动态发布已关闭（dynamics.enabled=false）')
   const c = cred()
   const fd = new FormData()
   fd.append('dynamic_id', String(origId))

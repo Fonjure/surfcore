@@ -43,6 +43,8 @@ const tests = [
   'test-bili-qr-login.mjs',
   // B站 每日分享 → 自己的动态：和四类动态共用 daily-dynamic.json，至少隔 gapMin 分钟。
   'test-share-dynamic.mjs',
+  // 分享方式与动态开关，以及评论 @ 的账号映射（全离线模拟）。
+  'test-bili-share-routing.mjs',
   // 生物钟 C：每窗至少 1、全天 ≤12、相邻最小间隔、skip 不结束全天、错过不补。
   'test-night-schedule.mjs',
   // Token 防爆破：每天唤醒上限、私聊更紧、最小间隔、单次发送条数、近 24h 花费。
@@ -113,7 +115,7 @@ const tests = [
   // 真实 bridge.js 的 text→TTS→record 链路（假网关 + 本地假 TTS，不发 QQ）
   'test-voice-route.mjs',
   // SnowLuma 账号/token 自发现（换 QQ 账号后 token 会变，写死的工具会 401）
-  'test-snowluma-conn.mjs',
+  'test-snowluma-conn.mjs', 'test-onebot-status.mjs',
   // 启动器与编码（乱码根因：.cmd 里的非 ASCII 会被 cmd 按 ANSI 解码）
   'test-encoding.mjs',
   // 控制台乱码机制（UTF-8 字节被按 GBK 解码）+ chcp 修复

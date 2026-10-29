@@ -12,6 +12,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 // 2026-10-21 补：line 144 用到 gate 却没 import，发动态会 ReferenceError
 import { gate } from '../lib/quota-gate.mjs'
+import { config } from '../lib/config.mjs'
 
 const argv = process.argv.slice(2)
 const args = new Map()
@@ -25,6 +26,10 @@ const atMid = args.get('at')          // 要 @ 的用户 mid
 const atName = args.get('at-name')    // 显示名（拼进 raw_text）
 const isDry = args.has('dry')
 const isGo = args.has('go')
+if (config().dynamics?.enabled === false) {
+  console.error('动态发布已关闭（dynamics.enabled=false）')
+  process.exit(3)
+}
 
 if (!imagePath || typeof imagePath !== 'string') { console.error('需要 --image <路径>'); process.exit(2) }
 if (isDry === isGo) { console.error('必须且只能给一个 --dry 或 --go'); process.exit(2) }

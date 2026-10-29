@@ -355,7 +355,7 @@ function wakePrompt(st, tools = '') {
     '     —— 自动编号（今天第 1 条 = #1），并立刻私信报备给我；他晚上 11 点集中审，**批了才能回** ✓',
     '     ⚠️ 待审的不回，所以**不占任何回复额度**；我说"拒"就彻底不理 ✗',
     '5) 按「标尺」打分排序，只对第一名考虑分享；**先看 share.via**：',
-    `   · 当前 share.via=${B.share?.via ?? 'dynamic'}；**默认 via=dynamic：发到自己的 B站 动态，不在评论区 @ 我** ✓`,
+    `   · 当前 share.via=${B.share?.via ?? 'dynamic'}；只允许使用当前选中的分享方式，不得换方式或绕过关闭的动态开关。`,
     '   · via=dynamic：`share-dynamic --bvid <BV> --text "<分享内容>" --score <N> --reason "<为什么值得分享>" --dry` → `--go`',
     '     - 会找这条视频已有的 AV 动态并**转发**：新动态 = 你的话 + **可点视频卡片**（找不到卡片会拒绝；`--allow-text` 才退“文字+链接”）',
     `     - 和四类动态**共用间隔**：任意两条 ≥${B.dynamics?.gapMin ?? 30} 分钟（命令会查 daily-dynamic.json，不够就拒 ✓）`,

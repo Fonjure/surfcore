@@ -36,7 +36,7 @@
 
 | # | id | 标题 | 图标 | 「高级设置」抽屉（折叠） | 抽屉内容概览 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `overview` | 概览 | 无 | 有（`client.js:1204`） | SnowLuma 安装、扩展与平台 |
+| 1 | `overview` | 概览 | 无 | 有 | NapCat 启动、扩展与平台 |
 | 2 | `characters` | 角色 | 无 | 有（`client.js:3655`） | 存档槽 / 回档 |
 | 3 | `purpose` | 目的 | 无 | **无**（页面主体用 5 个 `<details>` 折叠，`client.js:1420` 起） | — |
 | 4 | `qq` | QQ | 无 | 有（`client.js:1761`） | 鱼群触发卡、对话收尾卡、搜索、早安问候、19+ 组参数 |
@@ -68,9 +68,9 @@
 | 同上 | 「刷新 B站记忆」 | 写操作 | `POST /memory {action:"refresh-bili"}`（`client.js:1165-1168`） |
 | **合体层** | 生物钟是否在跑、身份对齐条数/候选数、两条记忆同步开关、隐私策略版本 | 只读 | `overview.scheduler/alignment/memory/privacyPolicyVersion`（`client.js:1170-1174`） |
 | 同上 | 「刷新 B站记忆」 | 写操作 | 走 `act("refresh-bili")` → `POST /bridge`（`client.js:1176`）——与上一张卡的同一个功能用了**两个不同端点**，见 §三 |
-| **启动** | QQ/B站各自「启动开关开/关 · 是否运行」；一键启动（含 SnowLuma）、启动QQ、启动B站；去 QQ 页、去 B站 页 | 按钮 | `POST /bridge {action:"start-all"\|"start-qq"\|"start-bili"}`（`client.js:1189-1195`） |
+| **启动** | QQ/B站各自「启动开关开/关 · 是否运行」；一键启动（含 NapCat）、启动QQ、启动B站；去 QQ 页、去 B站 页 | 按钮 | `POST /bridge {action:"start-all"\|"start-qq"\|"start-bili"}` |
 | 同上 | 「一键启动成功后弹窗提示」 | switch | 读 `unified.bridge.startupNotify`，写同一键（`client.js:1196-1202`），随底部「保存」落盘 |
-| 高级设置 → **SnowLuma 安装** | 当前安装目录、打开官方下载页、检测已安装的 SnowLuma、只打开 SnowLuma | 只读 + 按钮 | `snow.launcherPath`；`window.open(snow.downloadUrl \|\| 官方 releases)`（`client.js:1205-1213`）；检测走 `POST /bridge {action:"detect-snowluma"}`（`client.js:1122-1133`） |
+| 高级设置 → **NapCat 网关** | 启动脚本、连接状态、检测启动脚本、只启动 NapCat | 只读 + 按钮 | `overview.napcat`；`POST /bridge {action:"detect-napcat"\|"start-napcat"}` |
 | 高级设置 → **扩展与平台** | 已启用扩展 `n/m`、平台列表（含「预留」标注）、「贴吧已预留接口」 | 只读 | `overview.extensions`、`overview.platforms`（`client.js:1214-1218`） |
 | 底部动作条 | 刷新状态、立即备份配置 | 按钮 | `reload`；`POST /diagnostics {action:"backup"}`（`client.js:1219-1224`） |
 | **更新**（2026-10-26 新） | 状态点（可更新/最新）、上次检查时间、各组件一行状态；「检查更新」「查看详情」 | 按钮 + 弹窗 | `overview.updates`（插件启动后 20s 自动检查一次、之后每 6h）；`POST /updates {action:"check"\|"apply"\|"dismiss"}`。有更新且本次未 dismiss 时，**打开概览页会自动弹窗**（`UpdatesModal`）；弹窗里可逐组件勾选、勾「不再提示本次更新」后关闭即 dismiss（按远端 commit 记） |
@@ -173,7 +173,7 @@
 | 组 | 键（`F(path,label,hint,kind)` 的 path） |
 | --- | --- |
 | 连接与身份 | `dsh.baseUrl`、`dsh.provider`、`dsh.model`、`dsh.reasoningEffort`、`dsh.authToken`(password)、`dsh.allowRemote`(switch)、`agentPreset`、`workspaceTitle`、`sessionCwd` |
-| SnowLuma | `snowluma.wsUrl`、`httpUrl`、`accessToken`(password)、`followDiscoveredEndpoint`(switch)、`silenceWarnMs`、`allowLaunch`(switch)、`launcherPath`、`launchScript`、`homeDir` |
+| NapCat / OneBot | 兼容字段 `snowluma.wsUrl`、`httpUrl`、`accessToken`、`followDiscoveredEndpoint`、`silenceWarnMs`；启动使用 `napcat.allowLaunch`、`napcat.launchScript` |
 | 控制台 | `consolePort`、`consoleToken`(password)、`ackMessage`、`sendDelayMs`、`questionTimeoutMs` |
 | 安全通知 | `security.interceptNotify`(switch) |
 | 人格与注入 | `role.maxInjectChars` |
@@ -649,7 +649,7 @@
 | 配置键（组） | 所在文件 | 设置页入口 | 备注 |
 | --- | --- | --- | --- |
 | `dsh.baseUrl/provider/model/reasoningEffort/authToken/allowRemote`、`agentPreset`、`workspaceTitle`、`sessionCwd` | QQ `config.json` | QQ 高级「连接与身份」（`client.js:692-704`） | 「运行模式」select 也在这组里插入（`client.js:1811`） |
-| `snowluma.*` | QQ | QQ 高级「SnowLuma」（`client.js:705-715`） | `allowLaunch` 默认关 |
+| `snowluma.*`、`napcat.*` | QQ | QQ 高级「NapCat / OneBot」 | 网关连接沿用旧字段；仅用户点击时执行启动脚本 |
 | `consolePort`、`consoleToken` | QQ | QQ 高级「控制台」（`client.js:716-722`）；控制台访问页另有一套令牌 UI（`console.html:2605-2613`） | 两处写的是同一个键 |
 | `allow.groups/private`、`allowAllWhenEmpty`、`deny.users/groups/private` | QQ | QQ 页三张卡（`client.js:515-636`）；控制台访问页（`console.html:2541-2558`） | 控制台没有 `deny.users` 与 `allowAllWhenEmpty` |
 | `ownerQQ` | QQ | 由 `unified.admin.qq` 投影（`client.js:392-395`）；控制台直接输入（`console.html:2547-2549`） | 控制台清空 = fail-closed |

@@ -7,9 +7,9 @@
 
 | | |
 | --- | --- |
-| 版本 | `0.6.20` |
+| 版本 | `0.6.22` |
 | 目标 DSH | `0.2.1-rc.2 或更新（rc.3 已能安装，功能未完整回归）`（`npm run verify:adaptation` 可逐项复核） |
-| 平台 | Windows（沙箱 ACL / SnowLuma / 启动脚本都与它绑定） |
+| 平台 | Windows（沙箱 ACL / NapCat 启动脚本都与它绑定） |
 | 许可 | MIT（SnowLuma 是第三方专有运行时，**不随本仓库分发**） |
 | 配套仓库 | [surfvoicelocal](https://github.com/Mieksido/surfvoicelocal) · [surfvoicecloud](https://github.com/Mieksido/surfvoicecloud) · [surfpet](https://github.com/Mieksido/surfpet) |
 
@@ -48,11 +48,11 @@ npm install
 node scripts/setup-dsh.mjs      # 自动判断 DSH 用的 profile，不用填
 ```
 
-重启 DSH → 设置 → SurfCore → **诊断 → 一键安装（全部）**（自动发现 SnowLuma、写白名单、起桥接）。
+重启 DSH → 设置 → SurfCore → **诊断 → 一键安装（全部）**（验证已配置的 NapCat、按选择写白名单、起桥接）。
 
 > 不想敲命令：`powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mieksido/surfcore/main/scripts/bootstrap.ps1 | iex"`
 
-前置：Windows + Node ≥22.13 + DSH 0.2.1-rc.2 或更新（rc.3 已能安装，功能未完整回归） + SnowLuma（第三方，需自己装并扫码）。详见 [INSTALL.md](docs/guides/INSTALL.md)。
+前置：Windows + Node ≥22.13 + DSH 0.2.1-rc.2 或更新（rc.3 已能安装，功能未完整回归） + 已配置的 NapCat OneBot 网关。详见 [INSTALL.md](docs/guides/INSTALL.md)。
 
 ---
 
@@ -100,16 +100,15 @@ node scripts/setup-dsh.mjs      # 自动判断 DSH 用的 profile，不用填
 | Windows | 10/11（沙箱 ACL 与 `.bat` 启动器按 Windows 写） | ✅ |
 | Node.js | **≥ 22.13**（`node -v` 确认） | ✅ |
 | DeepSeek Harness（DSH） | **`0.2.1-rc.2 或更新（rc.3 已能安装，功能未完整回归）`**，能正常打开 Web GUI | ✅ |
-| SnowLuma2 | 第三方 QQ 运行时，**自己去官方 Releases 下载**并扫码登录 | ✅（只收 QQ 才需要） |
+| NapCat | 单独安装并登录的 QQ 网关，需开启 OneBot HTTP 与正向 WebSocket | ✅（只收 QQ 才需要） |
 | 语音引擎 | 两个配套仓库之一（本地/云端） | ⭕ 可选 |
 | 桌宠 | 配套仓库 `surfpet` | ⭕ 可选 |
 
-> ⚠️ **SurfCore 不下载、不安装、不打包 SnowLuma**（EULA §5.4）。它只做"检测已安装 + 一键打开窗口 + 连接状态"，
-> 登录与扫码始终由你自己完成。
+> SurfCore 不安装或打包 QQ 网关。登录由用户完成；一键启动使用自行配置的 PowerShell 脚本。本机脚本针对旁边已有的大肥鱼 NapCat，不能假定适合其他安装。
 
 ### 2.2 五步装好
 
-> 第一次装、或卡在某一步：看 [INSTALL.md](docs/guides/INSTALL.md)（手把手，含 SnowLuma 配置、白名单、排错表）。
+> 第一次装、或卡在某一步：看 [INSTALL.md](docs/guides/INSTALL.md)（含 NapCat 连接配置、白名单、排错表）。
 
 ```bash
 # 1) 取代码
@@ -144,7 +143,9 @@ node scripts/setup-dsh.mjs
 
 | 位置 | 填什么 | 不填会怎样 |
 | --- | --- | --- |
-| `snowluma.wsUrl` / `httpUrl` / `accessToken` | SnowLuma 的 OneBot WS、HTTP、token（**HTTP 与 WS 可能是两个不同的值**） | 桥接连不上 QQ，控制台显示"未连接" |
+| `snowluma.wsUrl` / `httpUrl` / `accessToken` | NapCat 的 OneBot 正向 WS、HTTP、共用访问令牌；旧字段名保留以兼容桥接 | 桥接连不上 QQ，控制台显示"未连接" |
+| `napcat.launchScript` / `allowLaunch` | 本机 NapCat PowerShell 启动脚本及是否允许显式启动 | 未配置合适脚本时不能通过按钮启动网关 |
+| `qqGateway` | 默认 `napcat`，防止重连时读取旧 SnowLuma 账号文件或环境变量；旧网关用户需显式设 `snowluma` | 错选旧网关模式可能使用另一套令牌 |
 | `ownerQQ` | 你自己的 QQ 号（`closed-agent` 模式只认这个人） | 管理员功能失效 |
 | `allow.private` / `allow.groups` | 允许她接触的私聊/群（数组） | **白名单为空 = 谁都不响应**（不是全放行） |
 | `consoleToken` | 控制台令牌；留空会自动生成到 `state/console-token` | 控制台需要令牌才能进 |
@@ -153,7 +154,9 @@ node scripts/setup-dsh.mjs
 
 ```jsonc
 {
-  "snowluma": { "wsUrl": "ws://127.0.0.1:3001", "httpUrl": "http://127.0.0.1:3000", "accessToken": "<SnowLuma token>" },
+  "qqGateway": "napcat",
+  "snowluma": { "wsUrl": "ws://127.0.0.1:3001", "httpUrl": "http://127.0.0.1:3000", "accessToken": "<OneBot token>", "followDiscoveredEndpoint": false },
+  "napcat": { "launchScript": "Start-NapCat.ps1", "allowLaunch": true },
   "ownerQQ": 1000000001,
   "allow": { "private": [1000000001], "groups": [100000004] },
   "consoleToken": ""
@@ -178,7 +181,7 @@ node scripts/verify-dsh-020-adaptation.mjs      # 对本机 DSH 版本逐项复�
 | 症状 | 原因 | 处理 |
 | --- | --- | --- |
 | 设置页找不到 SurfCore | bundle 没装上 / DSH 没重启 | 重跑 `setup-dsh.mjs`，重启 DSH |
-| 桥接起来了但收不到消息 | SnowLuma 未登录 / token 不对 / WS 端口不是 3001 | 控制台「运行总览」看状态；对照 `config.json` 的 `snowluma.*` |
+| 桥接起来了但收不到消息 | NapCat 未登录 / token 不对 / WS 地址不对 | 设置页「诊断」分别核对 HTTP、WS、账号和桥接状态 |
 | 群里 @ 她没反应 | 白名单没加这个群 / 模式不对 / 已暂停 | 看「访问与安全」页；确认 `allow.groups` |
 | agent 只会说话、不调工具 | MCP 没挂上 / 工具被安全守卫隐藏 / 工具开关关了 | 重跑 `setup-dsh.mjs`；看设置页工具开关 |
 | 控制台 401 | 没带令牌 | 用 `http://127.0.0.1:3100/?token=<consoleToken>` |
@@ -294,7 +297,7 @@ node scripts/verify-dsh-020-adaptation.mjs      # 对本机 DSH 版本逐项复�
 └──┬────────────┬──────────────┬───────────────────────────────┘
    │ WS         │ stdio        │ HTTP
 ┌──▼────────┐ ┌─▼──────────┐ ┌─▼─────────────────┐
-│ SnowLuma2 │ │ DSH MCP    │ │ 语音引擎 8765/8767 │
+│ NapCat    │ │ DSH MCP    │ │ 语音引擎 8765/8767 │
 │（第三方）  │ │ 客户端      │ │（surfvoice*）      │
 └───────────┘ └────────────┘ └───────────────────┘
 ```
@@ -354,7 +357,7 @@ node scripts/verify-dsh-020-adaptation.mjs      # 对本机 DSH 版本逐项复�
 
 | 问题 | 回答 |
 | --- | --- |
-| 能不装 SnowLuma 吗？ | QQ 部分不能（它负责登录与收发）。只要 B站/记忆/桌宠可以。 |
+| 能不装 SnowLuma 吗？ | 可以；QQ 部分仍需要可用的 OneBot 网关，本机使用 NapCat。只用 B站/记忆/桌宠不需要 QQ 网关。 |
 | 能不用 DSH 吗？ | 不能，插件与 preset 都跑在 DSH 里。 |
 | 会自己发消息吗？ | 默认不会。主动搭话要显式开「目的」；二代下发言必须调工具。 |
 | 数据会上传吗？ | 只有拼进提示词的文本会发给模型 API；不想让黑话词条出机就关 `slang.autoResearch`。 |

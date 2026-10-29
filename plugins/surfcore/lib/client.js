@@ -758,16 +758,14 @@ window.__ModuleLoader__.load({
         F("workspaceTitle", "工作区名称", "QQ 会话在 DSH 里的归组名"),
 F("sessionCwd", "会话工作目录", "留空用 surfcore 根目录", "text", { browse: "dir" }),
       ]},
-      { group: "SnowLuma", note: "OneBot 网关；「一键启动」只在你点击时打开本机已安装的 SnowLuma 窗口，不安装、不部署、不代扫码", fields: [
-        F("snowluma.wsUrl", "OneBot WebSocket", "例如 ws://127.0.0.1:3001"),
-        F("snowluma.httpUrl", "OneBot HTTP", "例如 http://127.0.0.1:3000（不能和 WS 同端口）"),
-        F("snowluma.accessToken", "OneBot accessToken", "SnowLuma 里配置的 token", "password"),
-        F("snowluma.followDiscoveredEndpoint", "跟随自发现端点", "网关换端口时自动跟随", "switch"),
+      { group: "NapCat / OneBot", note: "复用现有 NapCat；启动脚本仅在点击启动按钮时执行，账号登录由 NapCat 处理", fields: [
+        F("snowluma.wsUrl", "OneBot WebSocket", "填写 NapCat 正向 WebSocket 地址，例如 ws://127.0.0.1:6201"),
+        F("snowluma.httpUrl", "OneBot HTTP", "填写 NapCat HTTP 地址，例如 http://127.0.0.1:6200"),
+        F("snowluma.accessToken", "OneBot accessToken", "NapCat 对应服务配置的访问令牌", "password"),
+        F("snowluma.followDiscoveredEndpoint", "跟随旧网关自发现端点", "复用 NapCat 时建议关闭，避免旧网关端点覆盖现有配置", "switch"),
         F("snowluma.silenceWarnMs", "静默告警阈值（ms）", "多久没事件包就警告", "number", { min: 60000 }),
-        F("snowluma.allowLaunch", "允许插件打开 SnowLuma", "默认关；开启后一键启动会弹出 SnowLuma 窗口，仍需你扫码", "switch"),
-        F("snowluma.launcherPath", "SnowLuma 安装目录", "解压出来的根目录（里面有 app）；例如 D:/Tools/SnowLuma2", "text", { browse: "dir" }),
-        F("snowluma.launchScript", "启动脚本（可选）", "留空自动找 安装目录\\app\\launcher.bat", "text", { wide: true }),
-        F("snowluma.homeDir", "SnowLuma home（app 目录）", "内含 config 的那个目录，一般是 安装目录 下的 app；填错会导致「检测不到」", "text", { browse: "dir" }),
+        F("napcat.allowLaunch", "允许启动 NapCat", "仅点击启动按钮时执行；不会停止其他机器人", "switch"),
+        F("napcat.launchScript", "NapCat 启动脚本", "PowerShell 脚本路径；本机默认为 Start-NapCat.ps1", "text", { wide: true }),
       ]},
       { group: "控制台", note: "桥接本地控制台", fields: [
         F("consolePort", "控制台端口", "默认 3100", "number", { min: 1024, max: 65535 }),
@@ -863,6 +861,7 @@ F("sessionCwd", "会话工作目录", "留空用 surfcore 根目录", "text", { 
         F("socialV2.wake.recommendedSleepMaxMs", "推荐最长（ms）", "", "number"),
         F("socialV2.wake.recommendedProbability", "推荐普通消息概率", "", "number", { min: 0, max: 1, step: 0.01 }),
         F("socialV2.wake.recommendedKeywords", "推荐唤醒关键词", "逗号分隔", "list"),
+        F("socialV2.wake.requiredGroupKeywords", "群聊必回关键词", "群消息包含关键词时唤醒并要求回复，仍受额度和安全限制", "list"),
         F("socialV2.wake.recommendedAtMention", "推荐 @ 唤醒", "", "switch"),
         F("socialV2.wake.recommendedNameMention", "推荐名字唤醒", "", "switch"),
         F("socialV2.wake.recommendedQuestion", "推荐提问唤醒", "", "switch"),
@@ -882,7 +881,7 @@ F("sessionCwd", "会话工作目录", "留空用 surfcore 根目录", "text", { 
         F("socialV2.closure.maxSummaryChars", "收尾摘要上限（字）", "默认 160", "number", { min: 20, max: 500 }),
         F("socialV2.closure.maxNextOpeningChars", "下次接法上限（字）", "默认 120", "number", { min: 10, max: 300 }),
       ]},
-      { group: "二代 · 上线补历史消息", note: "桥接/QQ 账号上线时，用 SnowLuma 的历史消息接口补看离线期间错过的白名单会话；默认开，保存后重启 QQ 桥接生效", fields: [
+      { group: "二代 · 上线补历史消息", note: "桥接/QQ 账号上线时，用 OneBot 历史消息接口补看离线期间错过的白名单会话；默认开，保存后重启 QQ 桥接生效", fields: [
         F("socialV2.history.enabled", "每次上线补看历史消息", "默认开；关掉后不请求历史接口", "switch"),
         F("socialV2.history.limit", "每个会话最多补几条", "默认 30；历史接口按最新 N 条返回", "number", { min: 1, max: 100 }),
         F("socialV2.history.maxAgeMinutes", "只补最近多少分钟", "默认 720（12 小时）", "number", { min: 1, max: 10080 }),
@@ -1247,7 +1246,7 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
       const memory = overview?.memory ?? {};
       const align = overview?.alignment ?? {};
       const scheduler = overview?.scheduler ?? {};
-      const snow = overview?.snowluma ?? {};
+      const napcat = overview?.napcat ?? {};
       const platformStart = overview?.platformStart ?? {};
       const qqStart = platformStart.qq !== false;
       const biliStart = platformStart.bili !== false;
@@ -1276,11 +1275,11 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
           return null;
         } finally { setBusy(""); }
       };
-      const detectSnowLuma = async () => {
-        setBusy("detect-snowluma");
+      const detectNapCat = async () => {
+        setBusy("detect-napcat");
         try {
-          const result = await api("/bridge", { method: "POST", body: { action: "detect-snowluma" } });
-          toast(result.ok ? `✓ ${result.message}` : `✗ ${result.error ?? "没找到 SnowLuma"}`);
+          const result = await api("/bridge", { method: "POST", body: { action: "detect-napcat" } });
+          toast(result.ok ? `✓ ${result.message}` : `✗ ${result.error ?? "没找到 NapCat 启动脚本"}`);
           if (result.ok) reload();
         } catch (error) {
           toast(`✗ ${error.message}`);
@@ -1344,8 +1343,8 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
               h("span", null, "B站"),
               h("span", null, biliStart ? (scheduler.running ? "启动开关开 · 生物钟在跑" : "启动开关开 · 未运行") : "启动开关关")),
             h("div", { className: "qbw-actions" },
-              h(Btn, { onClick: () => act("start-all"), disabled: !!busy || (!qqStart && !biliStart) }, "一键启动（含 SnowLuma）"),
-              h(Btn, { kind: "qbw-btn2", onClick: () => act("start-qq"), disabled: !!busy || !qqStart || Boolean(bridge.running) }, "启动QQ"),
+              h(Btn, { onClick: () => act("start-all"), disabled: !!busy || (!qqStart && !biliStart) }, "一键启动（含 NapCat）"),
+              h(Btn, { kind: "qbw-btn2", onClick: () => act("start-qq"), disabled: !!busy || !qqStart }, "启动QQ"),
               h(Btn, { kind: "qbw-btn2", onClick: () => act("start-bili"), disabled: !!busy || !biliStart || Boolean(scheduler.running) }, "启动B站")),
             h("div", { className: "qbw-actions", style: { borderTop: "none", marginTop: "2px", paddingTop: "2px" } },
               h(Btn, { kind: "qbw-btn3", onClick: () => goTab?.("qq"), disabled: !!busy }, "去 QQ 页改启动开关"),
@@ -1357,7 +1356,7 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
                 checked: unified?.bridge?.startupNotify !== false,
                 onChange: (e) => setUnified(["bridge", "startupNotify"], e.target.checked),
               })),
-            h("div", { className: "qbw-hint" }, "已在跑的服务不会重复启动；QQ 启动时会按需打开已安装的 SnowLuma（仍需你扫码）。人格卡在「角色」页维护（和角色包在一起），这里不再重复显示。")),
+            h("div", { className: "qbw-hint" }, "已在跑的服务不会重复启动；QQ 启动时按需运行已配置的 NapCat 启动脚本。人格卡在「角色」页维护（和角色包在一起），这里不再重复显示。")),
           h("div", { className: "qbw-card" },
             h("h4", null, "更新 ", (() => {
               const rows = updates.results ?? [];
@@ -1394,16 +1393,16 @@ F("toolsPath", "bili.mjs 路径", "留空 = 用合体插件自带的 tools/", "t
                 ? h(Btn, { kind: "qbw-btn2", onClick: () => window.open((updates.results ?? []).find((x) => x.updateAvailable && x.downloadUrl).downloadUrl, "_blank", "noopener") }, "去下载新版")
                 : null,
               h(Btn, { kind: "qbw-btn2", onClick: () => setUpdateOpen(true), disabled: !(updates.results ?? []).length }, "查看详情"))),
-          h(AdvancedSettings, { note: "SnowLuma 安装 / 扩展与平台：装好后很少改" },
+          h(AdvancedSettings, { note: "NapCat 启动 / 扩展与平台：装好后很少改" },
             h("div", { className: "qbw-card" },
-              h("h4", null, "SnowLuma 安装"),
-              h("p", null, "第一次使用：下载官方 SnowLuma2 → 解压 → 点「检测已安装的 SnowLuma」→ 启动 QQ 并扫码。"),
-              h("div", { className: "qbw-kv" }, h("span", null, "当前安装目录"), h("span", null, snow.launcherPath || "未设置")),
+              h("h4", null, "NapCat 网关"),
+              h("p", null, "连接已安装的 NapCat，在 QQ 页填写 OneBot HTTP、正向 WebSocket 和令牌。"),
+              h("div", { className: "qbw-kv" }, h("span", null, "启动脚本"), h("span", null, napcat.launcher || "未找到")),
+              h("div", { className: "qbw-kv" }, h("span", null, "连接状态"), h("span", null, napcat.diagnosis?.state === "ok" ? "账号在线，桥接已连接" : (napcat.diagnosis?.hint || "尚未确认"))),
               h("div", { className: "qbw-actions" },
-                h(Btn, { kind: "qbw-btn2", onClick: () => window.open(snow.downloadUrl || "https://github.com/SnowLuma/SnowLuma/releases/latest", "_blank", "noopener") }, "打开官方下载页"),
-                h(Btn, { onClick: detectSnowLuma, disabled: !!busy }, "检测已安装的 SnowLuma"),
-                h(Btn, { kind: "qbw-btn2", onClick: () => act("start-snowluma"), disabled: !!busy }, "只打开 SnowLuma")),
-              h("div", { className: "qbw-hint" }, "SurfCore 只负责检测、打开和查看连接状态；SnowLuma2 本体按 EULA 不随插件分发，安装与扫码仍需你完成。")),
+                h(Btn, { onClick: detectNapCat, disabled: !!busy }, "检测 NapCat 启动脚本"),
+                h(Btn, { kind: "qbw-btn2", onClick: () => act("start-napcat"), disabled: !!busy || !qqStart }, "只启动 NapCat")),
+              h("div", { className: "qbw-hint" }, "启动脚本可复用已有安装；QQ 账号可能需要重新登录。停止 QQ 桥接不会关闭共享的 NapCat。")),
             h("div", { className: "qbw-card" },
               h("h4", null, "扩展与平台"),
               h("div", { className: "qbw-kv" }, h("span", null, "已启用扩展"), h("span", null, `${(overview?.extensions ?? []).filter((x) => x.enabled).length} / ${(overview?.extensions ?? []).length}`)),
@@ -2065,7 +2064,7 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
           // 先确认网关在线：SnowLuma 没起来时桥接仍会「投递成功」，但群里什么都收不到。
           const s = await api("/bridge");
           if (s?.status?.running && s.status.snowluma?.connected !== true) {
-            throw new Error("SnowLuma 没连上（先启动 SnowLuma，再点这里）");
+            throw new Error("QQ 网关没连上（先启动 NapCat，再点这里）");
           }
           const r = await api("/bili/share-now", { method: "POST", body: { action: "share-now" } });
           if (!r.ok) throw new Error(r.error ?? r.why ?? "桥接返回失败");
@@ -3944,14 +3943,14 @@ F("socialV2.voice.ffmpegPath", "ffmpeg 路径", "留空走 PATH", "text", { wide
         },
           h("h3", { style: { margin: "0 0 10px" } }, flow.phase === "done" ? "安装完成" : flow.phase === "error" ? "安装中断" : "一键安装"),
 
-          flow.phase === "scan" ? h("div", { className: "qbw-hint" }, "正在探测 SnowLuma（端口 / token / 群列表）…") : null,
+          flow.phase === "scan" ? h("div", { className: "qbw-hint" }, "正在探测 NapCat（端口 / 令牌 / 群列表）…") : null,
           flow.phase === "error" ? h("div", null,
             h("div", { className: "qbw-err" }, flow.error || "未知错误"),
-            h("div", { className: "qbw-hint", style: { marginTop: "8px" } }, "常见原因：DSH 里跑的还是旧版本（关掉 DSH 再开一次），或 SnowLuma 没登录。")) : null,
+            h("div", { className: "qbw-hint", style: { marginTop: "8px" } }, "请检查 NapCat 是否启动、QQ 是否登录及 OneBot 配置。")) : null,
 
           flow.phase === "form" ? h("div", null,
             h("div", { className: "qbw-hint", style: { marginBottom: "8px" } },
-              flow.snow?.online ? `已连上 SnowLuma：${flow.snow.nickname || ""}（${flow.snow.uin || "?"}）` : `没连上 SnowLuma：${flow.error || "先启动并扫码登录"}`),
+              flow.snow?.online ? `已连上 NapCat：${flow.snow.nickname || ""}（${flow.snow.uin || "?"}）` : `没连上 NapCat：${flow.error || "先启动并登录"}`),
             h("div", { className: "qbw-group" }, "主人 QQ（你的号，不是机器人号）"),
             h("input", { className: "qbw-input", value: flow.owner, onChange: (e) => setFlow({ ...flow, owner: e.target.value }), style: { width: "100%" } }),
             h("div", { className: "qbw-group", style: { marginTop: "10px" } }, `把哪些群加进白名单（${flow.groups.length} 个）`),
